@@ -1,5 +1,6 @@
 import { gamesApi } from "../api/games";
 import { clear, el } from "../ui/dom";
+import { confirmDialog } from "../ui/confirm";
 import {
   GAME_SORTS,
   GAME_STATUSES,
@@ -347,7 +348,11 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
           {
             class: "btn btn-sm btn-danger",
             onclick: async () => {
-              if (confirm(`Delete "${game.title}"? This also deletes its journal.`)) {
+              const ok = await confirmDialog(
+                `Delete "${game.title}"? This also deletes its journal.`,
+                { danger: true, confirmLabel: "Delete" },
+              );
+              if (ok) {
                 await gamesApi.delete(game.id);
                 await reload();
               }

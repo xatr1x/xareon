@@ -1,6 +1,7 @@
 import { gamesApi } from "../api/games";
 import { journalApi } from "../api/journal";
 import { clear, el } from "../ui/dom";
+import { confirmDialog } from "../ui/confirm";
 import { formatDate, formatDateTime } from "../ui/format";
 import { STATUS_LABELS, type Game } from "../types/game";
 import type { JournalEntry } from "../types/journal";
@@ -141,7 +142,7 @@ function entryCard(entry: JournalEntry, reload: () => Promise<void>): HTMLElemen
             {
               class: "btn btn-sm btn-danger",
               onclick: async () => {
-                if (confirm("Delete this entry?")) {
+                if (await confirmDialog("Delete this entry?", { danger: true, confirmLabel: "Delete" })) {
                   await journalApi.delete(entry.id);
                   await reload();
                 }

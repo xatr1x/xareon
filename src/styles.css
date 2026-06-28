@@ -245,6 +245,15 @@ body {
   font-size: 16px;
 }
 
+.modal.confirm {
+  max-width: 400px;
+}
+
+.confirm-message {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
