@@ -137,9 +137,8 @@ export function openGameForm(options: {
     ],
   );
 
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) close();
-  });
+  // Intentionally no "click outside to close": the form holds unsaved input, so
+  // it closes only via Cancel or a successful save to prevent accidental data loss.
   overlay.append(form);
   document.body.append(overlay);
   title.input.focus();

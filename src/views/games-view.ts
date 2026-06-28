@@ -44,8 +44,8 @@ let state: BrowserState = {
   maxRating: "",
   yearKind: "",
   year: "",
-  sort: "title",
-  direction: "asc",
+  sort: "default",
+  direction: "desc",
   advancedOpen: false,
 };
 
@@ -154,6 +154,8 @@ function buildToolbar(reload: () => Promise<void>): HTMLElement {
     {
       onchange: (e: Event) => {
         state.sort = (e.target as HTMLSelectElement).value as GameSort;
+        // The default ordering is fixed, so direction does not apply to it.
+        directionBtn.classList.toggle("hidden", state.sort === "default");
         void reload();
       },
     },
@@ -162,7 +164,7 @@ function buildToolbar(reload: () => Promise<void>): HTMLElement {
   const directionBtn = el(
     "button",
     {
-      class: "btn",
+      class: `btn${state.sort === "default" ? " hidden" : ""}`,
       title: "Toggle sort direction",
       onclick: () => {
         state.direction = state.direction === "asc" ? "desc" : "asc";

@@ -276,6 +276,14 @@ fn push_text_list<'s>(
 
 /// Map sort field + direction to a stable `ORDER BY` clause (NULLs last, tie-broken by id).
 fn order_clause(sort: GameSort, direction: SortDirection) -> String {
+    // The default ordering is a fixed composite that ignores direction:
+    // currently-playing games first, then most recently finished.
+    if sort == GameSort::Default {
+        return "CASE status WHEN 'playing' THEN 0 ELSE 1 END, \
+                finished_at DESC NULLS LAST, title COLLATE NOCASE ASC, id DESC"
+            .to_string();
+    }
+
     let column = match sort {
         GameSort::Title => "title COLLATE NOCASE",
         GameSort::StartedAt => "started_at",
@@ -283,6 +291,7 @@ fn order_clause(sort: GameSort, direction: SortDirection) -> String {
         GameSort::ReleaseYear => "release_year",
         GameSort::Rating => "rating",
         GameSort::Status => "status",
+        GameSort::Default => unreachable!("handled above"),
     };
     let dir = match direction {
         SortDirection::Asc => "ASC",

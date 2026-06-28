@@ -58,6 +58,7 @@ export interface GameInput {
 export type GenreMatch = "any" | "all";
 
 export const GAME_SORTS = [
+  "default",
   "title",
   "started_at",
   "finished_at",
@@ -68,6 +69,7 @@ export const GAME_SORTS = [
 export type GameSort = (typeof GAME_SORTS)[number];
 
 export const SORT_LABELS: Record<GameSort, string> = {
+  default: "Default (Playing first)",
   title: "Title",
   started_at: "Started",
   finished_at: "Finished",

@@ -217,8 +217,13 @@ created with migrations applied on first launch.
   - **GameQuery** is the single query surface (not many narrow endpoints): `search`
     (title), `statuses` (OR), `platforms` (OR), `genres` + `genreMatch` (any/all),
     `releaseYear`/`startedYear`/`finishedYear`/`playedYear`, `minRating`/`maxRating`,
-    plus `sort` (title/started/finished/release year/rating/status) and `direction`
-    (asc/desc). New filters are added to `GameQuery` + `build_filters`, nowhere else.
+    plus `sort` (default/title/started/finished/release year/rating/status) and
+    `direction` (asc/desc). New filters are added to `GameQuery` + `build_filters`,
+    nowhere else.
+  - **Default sort** (`GameSort::Default`, the sort when the page opens) is a fixed
+    composite: currently-**playing** games first, then by **finished date descending**
+    (NULLs last). It ignores `direction`; the user can still pick any other sort field
+    and direction from the controls (the direction toggle is hidden for the default sort).
 - **Genres** — normalized, reusable, recognized by normalized name. A game owns a list of
   genre names; the service resolves them to entities and links them. Command: `list_genres`
   (used for input suggestions; ready for future genre stats/management).
@@ -241,6 +246,10 @@ disabled placeholders.
 - **TypeScript:** strict mode with extra safety flags (`noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `verbatimModuleSyntax`). UI calls `api/*`, never `invoke`
   directly. No business logic in views.
+- **Dialogs:** never use the native `window.confirm/alert/prompt` — they are unreliable in
+  the Tauri webview. Use `confirmDialog` (`src/ui/confirm.ts`). The Add/Edit game modal does
+  **not** close on an outside click (only Cancel or a successful save), to avoid losing
+  unsaved input.
 - **Comments:** only where they add value. Consistent naming. No duplicated code.
 
 ## 9. Important architectural decisions

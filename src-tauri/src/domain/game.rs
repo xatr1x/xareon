@@ -121,11 +121,13 @@ pub enum GenreMatch {
     All,
 }
 
-/// Sortable game fields.
+/// Sortable game fields. `Default` is a fixed composite ordering (Playing games
+/// first, then by finished date descending) and ignores `direction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GameSort {
     #[default]
+    Default,
     Title,
     StartedAt,
     FinishedAt,
