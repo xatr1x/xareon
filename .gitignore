@@ -1,0 +1,14 @@
+# Dependencies
+/node_modules
+
+# Frontend build output
+/dist
+
+# Rust / Tauri build artifacts
+/src-tauri/target
+/src-tauri/gen
+
+# Editor / OS
+.DS_Store
+*.log
+.vite
