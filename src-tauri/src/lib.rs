@@ -39,6 +39,11 @@ pub fn run() {
             commands::game_commands::create_game,
             commands::game_commands::update_game,
             commands::game_commands::delete_game,
+            commands::genre_commands::list_genres,
+            commands::journal_commands::list_journal_entries,
+            commands::journal_commands::create_journal_entry,
+            commands::journal_commands::update_journal_entry,
+            commands::journal_commands::delete_journal_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xareon");

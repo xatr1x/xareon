@@ -1,25 +1,31 @@
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use std::collections::HashMap;
 
-use crate::domain::game::{Game, GameInput, GameStatus};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use rusqlite::types::Value;
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row};
+
+use crate::domain::game::{
+    Game, GameInput, GameQuery, GameSort, GameStatus, GenreMatch, SortDirection,
+};
+use crate::domain::genre::normalize;
 use crate::error::{AppError, AppResult};
 
-/// Abstract persistence operations for games. Higher layers depend on this trait
-/// so the storage engine can change without touching services or commands.
+/// Persistence operations for the `games` table and the game browser query.
+/// Reads hydrate each game's `genres` (from `game_genres`/`genres`); writes here
+/// cover only the `games` row — genre links are owned by `GenreRepository`.
 pub trait GameRepository {
-    fn list(&self) -> AppResult<Vec<Game>>;
+    fn query(&self, query: &GameQuery) -> AppResult<Vec<Game>>;
     fn get(&self, id: i64) -> AppResult<Game>;
-    fn create(&self, input: &GameInput) -> AppResult<Game>;
-    fn update(&self, id: i64, input: &GameInput) -> AppResult<Game>;
+    fn create(&self, input: &GameInput) -> AppResult<i64>;
+    fn update(&self, id: i64, input: &GameInput) -> AppResult<()>;
     fn delete(&self, id: i64) -> AppResult<()>;
 }
 
-/// Columns selected when reading a full game row, in `map_row` order.
-const COLUMNS: &str = "id, title, genre, platform, developer, publisher, \
-    release_year, started_at, finished_at, status, rating, cover_path, \
-    created_at, updated_at";
+/// Columns selected when reading a full game row, in `map_row` order. `genres`
+/// is not a column — it is hydrated separately.
+const COLUMNS: &str = "id, title, platform, developer, publisher, release_year, \
+    started_at, finished_at, status, rating, cover_path, created_at, updated_at";
 
-/// SQLite-backed implementation borrowing a connection for the duration of a call.
 pub struct SqliteGameRepository<'a> {
     conn: &'a Connection,
 }
@@ -33,7 +39,7 @@ impl<'a> SqliteGameRepository<'a> {
         Ok(Game {
             id: row.get("id")?,
             title: row.get("title")?,
-            genre: row.get("genre")?,
+            genres: Vec::new(), // hydrated by `hydrate_genres`
             platform: row.get("platform")?,
             developer: row.get("developer")?,
             publisher: row.get("publisher")?,
@@ -47,39 +53,75 @@ impl<'a> SqliteGameRepository<'a> {
             updated_at: row.get("updated_at")?,
         })
     }
+
+    /// Populate `genres` for the given games with a single grouped query.
+    fn hydrate_genres(&self, games: &mut [Game]) -> AppResult<()> {
+        if games.is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<Value> = games.iter().map(|g| Value::Integer(g.id)).collect();
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        let sql = format!(
+            "SELECT gg.game_id, ge.name FROM game_genres gg \
+             JOIN genres ge ON ge.id = gg.genre_id \
+             WHERE gg.game_id IN ({placeholders}) \
+             ORDER BY ge.name COLLATE NOCASE"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut by_game: HashMap<i64, Vec<String>> = HashMap::new();
+        let rows = stmt.query_map(params_from_iter(ids), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (game_id, name) = row?;
+            by_game.entry(game_id).or_default().push(name);
+        }
+        for game in games.iter_mut() {
+            if let Some(names) = by_game.remove(&game.id) {
+                game.genres = names;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl GameRepository for SqliteGameRepository<'_> {
-    fn list(&self) -> AppResult<Vec<Game>> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("SELECT {COLUMNS} FROM games ORDER BY title COLLATE NOCASE"))?;
-        let games = stmt
-            .query_map([], Self::map_row)?
+    fn query(&self, query: &GameQuery) -> AppResult<Vec<Game>> {
+        let (where_sql, params) = build_filters(query);
+        let sql = format!(
+            "SELECT {COLUMNS} FROM games{where_sql} ORDER BY {}",
+            order_clause(query.sort, query.direction)
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut games = stmt
+            .query_map(params_from_iter(params), Self::map_row)?
             .collect::<rusqlite::Result<Vec<Game>>>()?;
+        self.hydrate_genres(&mut games)?;
         Ok(games)
     }
 
     fn get(&self, id: i64) -> AppResult<Game> {
-        self.conn
+        let game = self
+            .conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM games WHERE id = ?1"),
                 [id],
                 Self::map_row,
             )
-            .optional()?
-            .ok_or(AppError::NotFound)
+            .optional()?;
+        let mut game = game.ok_or(AppError::NotFound)?;
+        self.hydrate_genres(std::slice::from_mut(&mut game))?;
+        Ok(game)
     }
 
-    fn create(&self, input: &GameInput) -> AppResult<Game> {
+    fn create(&self, input: &GameInput) -> AppResult<i64> {
         self.conn.execute(
             "INSERT INTO games \
-             (title, genre, platform, developer, publisher, release_year, \
+             (title, platform, developer, publisher, release_year, \
               started_at, finished_at, status, rating, cover_path) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 input.title,
-                input.genre,
                 input.platform,
                 input.developer,
                 input.publisher,
@@ -91,19 +133,18 @@ impl GameRepository for SqliteGameRepository<'_> {
                 input.cover_path,
             ],
         )?;
-        self.get(self.conn.last_insert_rowid())
+        Ok(self.conn.last_insert_rowid())
     }
 
-    fn update(&self, id: i64, input: &GameInput) -> AppResult<Game> {
+    fn update(&self, id: i64, input: &GameInput) -> AppResult<()> {
         let affected = self.conn.execute(
             "UPDATE games SET \
-             title = ?1, genre = ?2, platform = ?3, developer = ?4, publisher = ?5, \
-             release_year = ?6, started_at = ?7, finished_at = ?8, status = ?9, \
-             rating = ?10, cover_path = ?11, updated_at = datetime('now') \
-             WHERE id = ?12",
+             title = ?1, platform = ?2, developer = ?3, publisher = ?4, \
+             release_year = ?5, started_at = ?6, finished_at = ?7, status = ?8, \
+             rating = ?9, cover_path = ?10, updated_at = datetime('now') \
+             WHERE id = ?11",
             params![
                 input.title,
-                input.genre,
                 input.platform,
                 input.developer,
                 input.publisher,
@@ -119,7 +160,7 @@ impl GameRepository for SqliteGameRepository<'_> {
         if affected == 0 {
             return Err(AppError::NotFound);
         }
-        self.get(id)
+        Ok(())
     }
 
     fn delete(&self, id: i64) -> AppResult<()> {
@@ -129,6 +170,125 @@ impl GameRepository for SqliteGameRepository<'_> {
         }
         Ok(())
     }
+}
+
+/// Build the `WHERE` clause and its bound parameters from a query. Returns an
+/// empty string when there are no filters. Adding a filter means adding a branch
+/// here — the rest of the stack is untouched.
+fn build_filters(query: &GameQuery) -> (String, Vec<Value>) {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Value> = Vec::new();
+
+    if let Some(search) = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        clauses.push("title LIKE ?".to_string());
+        params.push(Value::Text(format!("%{search}%")));
+    }
+
+    if !query.statuses.is_empty() {
+        let placeholders = push_text_list(&mut params, query.statuses.iter().map(|s| s.as_str()));
+        clauses.push(format!("status IN ({placeholders})"));
+    }
+
+    if !query.platforms.is_empty() {
+        let placeholders = push_text_list(
+            &mut params,
+            query.platforms.iter().map(String::as_str).map(str::trim).filter(|s| !s.is_empty()),
+        );
+        if !placeholders.is_empty() {
+            clauses.push(format!("platform IN ({placeholders})"));
+        }
+    }
+
+    let genres: Vec<String> = query
+        .genres
+        .iter()
+        .map(|g| normalize(g))
+        .filter(|g| !g.is_empty())
+        .collect();
+    if !genres.is_empty() {
+        let placeholders = push_text_list(&mut params, genres.iter().map(String::as_str));
+        let exists = format!(
+            "SELECT 1 FROM game_genres gg JOIN genres ge ON ge.id = gg.genre_id \
+             WHERE gg.game_id = games.id AND ge.name_normalized IN ({placeholders})"
+        );
+        match query.genre_match {
+            GenreMatch::Any => clauses.push(format!("EXISTS ({exists})")),
+            GenreMatch::All => {
+                clauses.push(format!(
+                    "(SELECT COUNT(DISTINCT ge.name_normalized) FROM game_genres gg \
+                     JOIN genres ge ON ge.id = gg.genre_id \
+                     WHERE gg.game_id = games.id AND ge.name_normalized IN ({placeholders})) = ?"
+                ));
+                params.push(Value::Integer(genres.len() as i64));
+            }
+        }
+    }
+
+    if let Some(year) = query.release_year {
+        clauses.push("release_year = ?".to_string());
+        params.push(Value::Integer(year));
+    }
+    if let Some(year) = query.started_year {
+        clauses.push("substr(started_at, 1, 4) = ?".to_string());
+        params.push(Value::Text(format!("{year:04}")));
+    }
+    if let Some(year) = query.finished_year {
+        clauses.push("substr(finished_at, 1, 4) = ?".to_string());
+        params.push(Value::Text(format!("{year:04}")));
+    }
+    if let Some(year) = query.played_year {
+        clauses.push(
+            "(started_at IS NOT NULL AND substr(started_at, 1, 4) <= ? \
+             AND (finished_at IS NULL OR substr(finished_at, 1, 4) >= ?))"
+                .to_string(),
+        );
+        params.push(Value::Text(format!("{year:04}")));
+        params.push(Value::Text(format!("{year:04}")));
+    }
+    if let Some(min) = query.min_rating {
+        clauses.push("rating >= ?".to_string());
+        params.push(Value::Integer(min));
+    }
+    if let Some(max) = query.max_rating {
+        clauses.push("rating <= ?".to_string());
+        params.push(Value::Integer(max));
+    }
+
+    if clauses.is_empty() {
+        (String::new(), params)
+    } else {
+        (format!(" WHERE {}", clauses.join(" AND ")), params)
+    }
+}
+
+/// Push a list of text values as parameters and return the `?, ?, …` placeholder
+/// string for them.
+fn push_text_list<'s>(
+    params: &mut Vec<Value>,
+    values: impl Iterator<Item = &'s str>,
+) -> String {
+    let start = params.len();
+    for value in values {
+        params.push(Value::Text(value.to_string()));
+    }
+    vec!["?"; params.len() - start].join(", ")
+}
+
+/// Map sort field + direction to a stable `ORDER BY` clause (NULLs last, tie-broken by id).
+fn order_clause(sort: GameSort, direction: SortDirection) -> String {
+    let column = match sort {
+        GameSort::Title => "title COLLATE NOCASE",
+        GameSort::StartedAt => "started_at",
+        GameSort::FinishedAt => "finished_at",
+        GameSort::ReleaseYear => "release_year",
+        GameSort::Rating => "rating",
+        GameSort::Status => "status",
+    };
+    let dir = match direction {
+        SortDirection::Asc => "ASC",
+        SortDirection::Desc => "DESC",
+    };
+    format!("{column} {dir} NULLS LAST, id {dir}")
 }
 
 // Bridge the domain enum to SQLite. Kept in the repository layer so the domain

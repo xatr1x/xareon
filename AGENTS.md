@@ -72,14 +72,19 @@ xareon/
 │   ├── main.ts                 # app shell + sidebar navigation
 │   ├── styles.css              # dark, minimal theme
 │   ├── api/
-│   │   └── games.ts            # typed wrappers over game_* commands
+│   │   ├── games.ts            # typed wrappers over game_* + list_genres
+│   │   └── journal.ts          # wrappers over *_journal_entry commands
 │   ├── types/
-│   │   └── game.ts             # mirror of Rust Game/GameInput/GameStatus
+│   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
+│   │   ├── genre.ts            # Genre
+│   │   └── journal.ts          # JournalEntry + inputs
 │   ├── ui/
-│   │   └── dom.ts              # tiny typed DOM helpers (el, clear)
+│   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
+│   │   └── format.ts           # date/time formatting
 │   └── views/
-│       ├── games-view.ts       # games list + table
-│       └── game-form.ts        # create/edit modal form
+│       ├── games-view.ts       # game browser: filters, sort, table
+│       ├── game-form.ts        # create/edit modal form (multi-genre input)
+│       └── game-detail.ts      # game summary + journal timeline
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
     ├── build.rs
@@ -93,24 +98,33 @@ xareon/
         ├── state.rs            # AppState { db: DatabaseManager }
         ├── error.rs            # AppError / AppResult
         ├── domain/
-        │   └── game.rs         # Game, GameInput, GameStatus
+        │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
+        │   ├── genre.rs        # Genre + normalize()
+        │   └── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
         ├── repositories/
-        │   └── game_repository.rs  # GameRepository trait + SQLite impl (SQL lives here)
+        │   ├── game_repository.rs    # games table + browser query + genre hydration
+        │   ├── genre_repository.rs   # genres + game_genres writes (get_or_create, links)
+        │   └── journal_repository.rs # journal_entries
         ├── services/
-        │   └── game_service.rs # GameService (validation + orchestration)
+        │   ├── game_service.rs    # GameService (validation + game/genre orchestration)
+        │   ├── genre_service.rs   # GenreService (list genres)
+        │   └── journal_service.rs # JournalService (validation, ensures game exists)
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
         ├── storage/            # file storage (covers, screenshots, backups) — reserved
-        ├── config/             # application configuration — reserved
-        ├── events/             # domain events — reserved for future use
+        ├── config/            # application configuration — reserved
+        ├── events/            # domain events — reserved for future use
         ├── commands/
-        │   └── game_commands.rs    # #[tauri::command] handlers
+        │   ├── game_commands.rs    # game #[tauri::command] handlers (writes in a tx)
+        │   ├── genre_commands.rs   # list_genres
+        │   └── journal_commands.rs # journal #[tauri::command] handlers
         ├── db/
         │   ├── connection.rs   # open() + enable FKs + run migrations
         │   ├── manager.rs      # DatabaseManager — sole gateway to the connection
         │   └── migrations.rs   # versioned migration runner (user_version)
         └── migrations/
-            └── 0001_init.sql   # games table
+            ├── 0001_init.sql            # games table
+            └── 0002_genres_journal.sql  # genres, game_genres, journal_entries
 ```
 
 ## 4. Technology stack
@@ -148,36 +162,72 @@ created with migrations applied on first launch.
   `db/migrations.rs`. On open, every migration whose 1-based index exceeds the current
   `user_version` is applied and the version advanced.
 - **No raw SQL outside repositories.**
+- **Transactions:** writes that span tables (creating/updating a game plus its genre
+  links) run inside a transaction opened at the command boundary
+  (`Connection::unchecked_transaction`), so the aggregate commits atomically.
 
 ### Schema (current)
 
-`games`
-| column        | type    | notes                                                                 |
-|---------------|---------|-----------------------------------------------------------------------|
-| id            | INTEGER | PK, autoincrement                                                     |
-| title         | TEXT    | NOT NULL                                                              |
-| genre         | TEXT    | nullable                                                              |
-| platform      | TEXT    | nullable                                                              |
-| developer     | TEXT    | nullable                                                              |
-| publisher     | TEXT    | nullable                                                              |
-| release_year  | INTEGER | nullable                                                              |
-| started_at    | TEXT    | nullable, ISO date                                                   |
-| finished_at   | TEXT    | nullable, ISO date                                                   |
-| status        | TEXT    | NOT NULL, default `planned`, CHECK in status set                     |
-| rating        | INTEGER | nullable, CHECK 0–10                                                  |
-| cover_path    | TEXT    | nullable                                                              |
-| created_at    | TEXT    | NOT NULL, default `datetime('now')`                                  |
-| updated_at    | TEXT    | NOT NULL, default `datetime('now')`; set on update                  |
+`games` — no `genre` column (genres are normalized; see below).
+| column        | type    | notes                                                  |
+|---------------|---------|--------------------------------------------------------|
+| id            | INTEGER | PK, autoincrement                                      |
+| title         | TEXT    | NOT NULL                                               |
+| platform      | TEXT    | nullable                                               |
+| developer     | TEXT    | nullable                                               |
+| publisher     | TEXT    | nullable                                               |
+| release_year  | INTEGER | nullable                                               |
+| started_at    | TEXT    | nullable, ISO date                                     |
+| finished_at   | TEXT    | nullable, ISO date                                     |
+| status        | TEXT    | NOT NULL, default `planned`, CHECK in status set       |
+| rating        | INTEGER | nullable, CHECK 0–10                                    |
+| cover_path    | TEXT    | nullable                                               |
+| created_at    | TEXT    | NOT NULL, default `datetime('now')`                    |
+| updated_at    | TEXT    | NOT NULL, default `datetime('now')`; set on update     |
+
+`genres` — reusable genre entities (a game can have many; a genre many games).
+| column          | type    | notes                                              |
+|-----------------|---------|----------------------------------------------------|
+| id              | INTEGER | PK, autoincrement                                  |
+| name            | TEXT    | NOT NULL, first-seen casing                         |
+| name_normalized | TEXT    | NOT NULL, UNIQUE — trimmed+lowercased; dedupe key  |
+
+`game_genres` — many-to-many link.
+| column   | type    | notes                                          |
+|----------|---------|------------------------------------------------|
+| game_id  | INTEGER | FK → games(id) ON DELETE CASCADE               |
+| genre_id | INTEGER | FK → genres(id) ON DELETE CASCADE              |
+|          |         | PRIMARY KEY (game_id, genre_id)                |
+
+`journal_entries` — per-game journal (a first-class entity).
+| column     | type    | notes                                            |
+|------------|---------|--------------------------------------------------|
+| id         | INTEGER | PK, autoincrement                                |
+| game_id    | INTEGER | NOT NULL, FK → games(id) ON DELETE CASCADE       |
+| body       | TEXT    | NOT NULL                                         |
+| created_at | TEXT    | NOT NULL, default `datetime('now')`              |
+| updated_at | TEXT    | NOT NULL, default `datetime('now')`; set on edit |
 
 **Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`.
 
 ## 7. Modules (current)
 
-- **Games** — full CRUD. Commands: `list_games`, `get_game`, `create_game`,
-  `update_game`, `delete_game`.
+- **Games** — full CRUD plus a flexible browser query. Commands: `list_games` (takes an
+  optional `GameQuery`), `get_game`, `create_game`, `update_game`, `delete_game`.
+  - **GameQuery** is the single query surface (not many narrow endpoints): `search`
+    (title), `statuses` (OR), `platforms` (OR), `genres` + `genreMatch` (any/all),
+    `releaseYear`/`startedYear`/`finishedYear`/`playedYear`, `minRating`/`maxRating`,
+    plus `sort` (title/started/finished/release year/rating/status) and `direction`
+    (asc/desc). New filters are added to `GameQuery` + `build_filters`, nowhere else.
+- **Genres** — normalized, reusable, recognized by normalized name. A game owns a list of
+  genre names; the service resolves them to entities and links them. Command: `list_genres`
+  (used for input suggestions; ready for future genre stats/management).
+- **Journal** — per-game diary, a first-class entity. Commands: `list_journal_entries`
+  (newest first), `create_journal_entry`, `update_journal_entry`, `delete_journal_entry`.
+  In the UI, opening a game shows its summary and journal timeline.
 
-The frontend navigation already lists future modules (Timeline, Achievements, Statistics)
-as disabled placeholders.
+The frontend navigation lists future modules (Timeline, Achievements, Statistics) as
+disabled placeholders.
 
 ## 8. Conventions
 
@@ -200,6 +250,15 @@ as disabled placeholders.
 - **Repository traits.** Services depend on `GameRepository`, not on SQLite directly,
   enabling future storage changes and unit testing with fakes.
 - **Database access is abstracted.** The application must access SQLite only through a dedicated database abstraction (DatabaseManager or equivalent). The current implementation may internally use a single Mutex<Connection>, but the rest of the application must not depend on that implementation detail. This allows replacing the storage strategy in the future without affecting services or repositories.
+- **Genres are normalized, not comma-strings.** Reusable `genres` entities with a
+  `game_genres` join table. `GenreRepository` owns writes to both genre tables
+  (`get_or_create` dedupes by normalized name; `replace_for_game` re-links a game's set);
+  `GameRepository` reads them when hydrating/filtering the game aggregate. This keeps the
+  door open for genre stats, filtering and management with no schema change.
+- **One flexible query, not many endpoints.** The game browser is driven by a single
+  `GameQuery`; `build_filters` turns it into parameterized SQL. Adding a filter is a local
+  change there. The aggregate `Game` (with `genres`) is assembled in `GameService` writes
+  inside a transaction so game row + genre links commit atomically.
 - **`bundled` SQLite.** No system SQLite dependency; reproducible builds.
 - **Hand-rolled migration runner.** `user_version`-based, zero extra dependencies, easy to
   reason about. Append-only — never edit an applied migration.
@@ -208,10 +267,13 @@ as disabled placeholders.
 
 ## 10. Known limitations
 
-- Only the **Games** module is implemented (MVP). Journal, tags, screenshots, achievements
-  and statistics are specified but not yet built.
-- Dates are stored as plain ISO strings (`TEXT`); no calendar/timezone handling.
-- No automated tests yet (the service layer is structured to allow them).
+- Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized) and the
+  per-game **Journal**. Not yet built: personal tags, screenshot gallery, achievements,
+  statistics, timeline.
+- Dates are stored as plain ISO/`datetime('now')` strings (`TEXT`, UTC); no calendar or
+  timezone handling beyond formatting in the UI.
+- The browser query has no pagination yet (fine for a personal library; revisit if needed).
+- No automated tests yet (services are generic over repository traits to allow fakes).
 - Single local database; no backup/restore, sync, or import.
 
 ## 11. How to add a new feature
@@ -234,13 +296,14 @@ Adding a module (e.g. Journal) end-to-end:
 
 ## 12. Roadmap
 
+Done: journal entries with date/time; multi-genre (normalized); search, filtering & sorting.
+
 Specified initial scope still to build:
-- Personal journal entries with date/time.
-- Timeline view.
+- Timeline view (cross-game).
 - Personal tags.
 - Screenshot gallery.
 - Universal achievements system (per game; custom achievements; progress; hidden flag).
-- Statistics page.
+- Statistics page (incl. genre statistics, enabled by the normalized genres).
 
 Future expansion (from the spec):
 - Steam library import.
@@ -248,7 +311,6 @@ Future expansion (from the spec):
 - Cloud sync.
 - Plugins.
 - Playtime tracking.
-- Search & filtering.
 - Data export/import.
 - Localization (multi-language support).
 - Theme manager (support additional themes in the future).

@@ -1,5 +1,14 @@
+import { genresApi } from "../api/games";
 import { el } from "../ui/dom";
 import { GAME_STATUSES, STATUS_LABELS, type Game, type GameInput } from "../types/game";
+
+/** Split a comma-separated genre input into trimmed, non-empty names. */
+function parseGenres(value: string): string[] {
+  return value
+    .split(",")
+    .map((g) => g.trim())
+    .filter((g) => g.length > 0);
+}
 
 /** A modal form for creating or editing a game. Returns the collected input via `onSubmit`. */
 export function openGameForm(options: {
@@ -24,7 +33,6 @@ export function openGameForm(options: {
   };
 
   const title = field("title", "Title", game?.title ?? "");
-  const genre = field("genre", "Genre", game?.genre ?? "");
   const platform = field("platform", "Platform", game?.platform ?? "");
   const developer = field("developer", "Developer", game?.developer ?? "");
   const publisher = field("publisher", "Publisher", game?.publisher ?? "");
@@ -32,6 +40,24 @@ export function openGameForm(options: {
   const startedAt = field("startedAt", "Started", game?.startedAt ?? "", "date");
   const finishedAt = field("finishedAt", "Finished", game?.finishedAt ?? "", "date");
   const rating = field("rating", "Rating (0–10)", game?.rating ?? "", "number");
+
+  // Genres: free-text, comma-separated, with suggestions from existing genres.
+  const genresList = el("datalist", { id: "genre-suggestions" });
+  const genresInput = el("input", {
+    name: "genres",
+    value: (game?.genres ?? []).join(", "),
+    placeholder: "Action, RPG, Adventure",
+    list: "genre-suggestions",
+    autocomplete: "off",
+  });
+  const genresRow = el("label", { class: "field field-wide" }, [
+    el("span", {}, ["Genres (comma-separated)"]),
+    genresInput,
+    genresList,
+  ]);
+  void genresApi.list().then((genres) => {
+    genresList.replaceChildren(...genres.map((g) => el("option", { value: g.name })));
+  });
 
   const statusSelect = el(
     "select",
@@ -70,7 +96,7 @@ export function openGameForm(options: {
         }
         const input: GameInput = {
           title: title.input.value.trim(),
-          genre: text(genre.input),
+          genres: parseGenres(genresInput.value),
           platform: text(platform.input),
           developer: text(developer.input),
           publisher: text(publisher.input),
@@ -94,7 +120,7 @@ export function openGameForm(options: {
       el("div", { class: "form-grid" }, [
         title.row,
         statusRow,
-        genre.row,
+        genresRow,
         platform.row,
         developer.row,
         publisher.row,

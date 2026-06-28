@@ -291,3 +291,240 @@ body {
   gap: 8px;
   margin-top: 16px;
 }
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+/* Toolbar / filters */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.search {
+  flex: 1;
+  max-width: 360px;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sort-label {
+  font-size: 12px;
+}
+
+.toolbar select {
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--text);
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.chip.static {
+  cursor: default;
+  color: var(--text);
+}
+
+.advanced {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.advanced.hidden {
+  display: none;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.filter-group input[type="text"],
+.filter-group input[type="number"] {
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+}
+
+.num-input {
+  width: 64px;
+}
+
+/* Table title link */
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.genres-cell {
+  color: var(--text-muted);
+  max-width: 240px;
+}
+
+/* Game detail */
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-summary {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.meta-item {
+  font-size: 13px;
+}
+
+.genre-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Journal */
+.journal h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.composer-box {
+  margin-bottom: 24px;
+}
+
+.composer {
+  width: 100%;
+  resize: vertical;
+  padding: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.composer:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composer-actions,
+.entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.entry {
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.entry-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.entry-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.entry-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}

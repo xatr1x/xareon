@@ -4,10 +4,16 @@ use crate::error::AppResult;
 
 /// Ordered list of migrations. Each entry is embedded at compile time. To add a
 /// migration, append a new `.sql` file and a line here — never edit an applied one.
-const MIGRATIONS: &[Migration] = &[Migration {
-    name: "0001_init",
-    sql: include_str!("../migrations/0001_init.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        name: "0001_init",
+        sql: include_str!("../migrations/0001_init.sql"),
+    },
+    Migration {
+        name: "0002_genres_journal",
+        sql: include_str!("../migrations/0002_genres_journal.sql"),
+    },
+];
 
 struct Migration {
     #[allow(dead_code)] // kept for logging/diagnostics and to document order

@@ -2,3 +2,5 @@
 //! here, not on the concrete SQLite implementations.
 
 pub mod game_repository;
+pub mod genre_repository;
+pub mod journal_repository;
