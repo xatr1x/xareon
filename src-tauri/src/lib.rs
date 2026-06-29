@@ -44,6 +44,8 @@ pub fn run() {
             commands::journal_commands::create_journal_entry,
             commands::journal_commands::update_journal_entry,
             commands::journal_commands::delete_journal_entry,
+            commands::settings_commands::get_settings,
+            commands::settings_commands::update_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xareon");

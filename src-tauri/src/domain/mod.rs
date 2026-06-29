@@ -3,3 +3,4 @@
 pub mod game;
 pub mod genre;
 pub mod journal;
+pub mod settings;

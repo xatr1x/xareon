@@ -13,6 +13,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "0002_genres_journal",
         sql: include_str!("../migrations/0002_genres_journal.sql"),
     },
+    Migration {
+        name: "0003_settings",
+        sql: include_str!("../migrations/0003_settings.sql"),
+    },
 ];
 
 struct Migration {

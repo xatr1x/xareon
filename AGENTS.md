@@ -73,18 +73,21 @@ xareon/
 │   ├── styles.css              # dark, minimal theme
 │   ├── api/
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
-│   │   └── journal.ts          # wrappers over *_journal_entry commands
+│   │   ├── journal.ts          # wrappers over *_journal_entry commands
+│   │   └── settings.ts         # wrappers over get_settings/update_settings
 │   ├── types/
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
-│   │   └── journal.ts          # JournalEntry + inputs
+│   │   ├── journal.ts          # JournalEntry + inputs
+│   │   └── settings.ts         # Settings
 │   ├── ui/
 │   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
 │   │   └── format.ts           # date/time formatting
 │   └── views/
 │       ├── games-view.ts       # game browser: filters, sort, table
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
-│       └── game-detail.ts      # game summary + journal timeline
+│       ├── game-detail.ts      # game summary + journal timeline
+│       └── settings-view.ts    # settings page (load + save)
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
     ├── build.rs
@@ -100,31 +103,36 @@ xareon/
         ├── domain/
         │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
         │   ├── genre.rs        # Genre + normalize()
-        │   └── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
+        │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
+        │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
-        │   ├── game_repository.rs    # games table + browser query + genre hydration
-        │   ├── genre_repository.rs   # genres + game_genres writes (get_or_create, links)
-        │   └── journal_repository.rs # journal_entries
+        │   ├── game_repository.rs     # games table + browser query + genre hydration
+        │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
+        │   ├── journal_repository.rs  # journal_entries
+        │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
-        │   ├── game_service.rs    # GameService (validation + game/genre orchestration)
-        │   ├── genre_service.rs   # GenreService (list genres)
-        │   └── journal_service.rs # JournalService (validation, ensures game exists)
+        │   ├── game_service.rs     # GameService (validation + game/genre orchestration)
+        │   ├── genre_service.rs    # GenreService (list genres)
+        │   ├── journal_service.rs  # JournalService (validation, ensures game exists)
+        │   └── settings_service.rs # SettingsService (maps typed Settings ↔ KV keys)
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
         ├── storage/            # file storage (covers, screenshots, backups) — reserved
         ├── config/            # application configuration — reserved
         ├── events/            # domain events — reserved for future use
         ├── commands/
-        │   ├── game_commands.rs    # game #[tauri::command] handlers (writes in a tx)
-        │   ├── genre_commands.rs   # list_genres
-        │   └── journal_commands.rs # journal #[tauri::command] handlers
+        │   ├── game_commands.rs     # game #[tauri::command] handlers (writes in a tx)
+        │   ├── genre_commands.rs    # list_genres
+        │   ├── journal_commands.rs  # journal #[tauri::command] handlers
+        │   └── settings_commands.rs # get_settings, update_settings (write in a tx)
         ├── db/
         │   ├── connection.rs   # open() + enable FKs + run migrations
         │   ├── manager.rs      # DatabaseManager — sole gateway to the connection
         │   └── migrations.rs   # versioned migration runner (user_version)
         └── migrations/
             ├── 0001_init.sql            # games table
-            └── 0002_genres_journal.sql  # genres, game_genres, journal_entries
+            ├── 0002_genres_journal.sql  # genres, game_genres, journal_entries
+            └── 0003_settings.sql        # settings key-value store
 ```
 
 ## 4. Technology stack
@@ -208,6 +216,14 @@ created with migrations applied on first launch.
 | created_at | TEXT    | NOT NULL, default `datetime('now')`              |
 | updated_at | TEXT    | NOT NULL, default `datetime('now')`; set on edit |
 
+`settings` — application settings as a key-value store (schema stays stable as
+settings are added; a new setting is a new key, not a new column).
+| column     | type | notes                                              |
+|------------|------|----------------------------------------------------|
+| key        | TEXT | PK                                                 |
+| value      | TEXT | NOT NULL (cleared fields stored as empty string)   |
+| updated_at | TEXT | NOT NULL, default `datetime('now')`; set on update |
+
 **Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`.
 
 ## 7. Modules (current)
@@ -231,8 +247,19 @@ created with migrations applied on first launch.
   (newest first), `create_journal_entry`, `update_journal_entry`, `delete_journal_entry`.
   In the UI, opening a game shows its summary and journal timeline.
 
+- **Settings** — a centralized, extensible settings system stored in SQLite as a
+  key-value store, designed to grow as future features need configuration.
+  Commands: `get_settings`, `update_settings` (loads/saves the whole `Settings`
+  aggregate). The typed `Settings` model maps to KV keys in `SettingsService` (the
+  single mapping point); adding a setting is a field on `Settings` + a key there —
+  **no migration**. First settings: `userIdentifier` (human-readable public
+  handle, also the future Google Drive folder name; not a UUID) and
+  `googleDriveFolder` (URL stored now for the future sync system — the Drive
+  integration itself is not implemented). Saving runs inside a transaction so all
+  settings commit atomically.
+
 The frontend navigation lists future modules (Timeline, Achievements, Statistics) as
-disabled placeholders.
+disabled placeholders. Settings is a live nav entry.
 
 ## 8. Conventions
 
@@ -276,9 +303,9 @@ disabled placeholders.
 
 ## 10. Known limitations
 
-- Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized) and the
-  per-game **Journal**. Not yet built: personal tags, screenshot gallery, achievements,
-  statistics, timeline.
+- Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), the
+  per-game **Journal**, and **Settings** (user identifier + Google Drive folder URL).
+  Not yet built: personal tags, screenshot gallery, achievements, statistics, timeline.
 - Dates are stored as plain ISO/`datetime('now')` strings (`TEXT`, UTC); no calendar or
   timezone handling beyond formatting in the UI.
 - The browser query has no pagination yet (fine for a personal library; revisit if needed).
@@ -305,7 +332,8 @@ Adding a module (e.g. Journal) end-to-end:
 
 ## 12. Roadmap
 
-Done: journal entries with date/time; multi-genre (normalized); search, filtering & sorting.
+Done: journal entries with date/time; multi-genre (normalized); search, filtering &
+sorting; centralized settings (user identifier + Google Drive folder URL).
 
 Specified initial scope still to build:
 - Timeline view (cross-game).

@@ -1,6 +1,7 @@
 import "./styles.css";
 import { el } from "./ui/dom";
 import { renderGamesView } from "./views/games-view";
+import { renderSettingsView } from "./views/settings-view";
 
 /**
  * Application shell: a fixed sidebar with navigation and a content area. Each nav
@@ -20,6 +21,7 @@ const NAV: NavItem[] = [
   { id: "timeline", label: "Timeline", render: placeholder("Timeline"), enabled: false },
   { id: "achievements", label: "Achievements", render: placeholder("Achievements"), enabled: false },
   { id: "stats", label: "Statistics", render: placeholder("Statistics"), enabled: false },
+  { id: "settings", label: "Settings", render: renderSettingsView, enabled: true },
 ];
 
 function placeholder(name: string): (root: HTMLElement) => void {
