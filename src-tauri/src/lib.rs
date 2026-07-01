@@ -34,6 +34,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::achievement_commands::list_achievements,
+            commands::achievement_commands::create_achievement,
+            commands::achievement_commands::update_achievement,
+            commands::achievement_commands::set_achievement_progress,
+            commands::achievement_commands::complete_achievement,
+            commands::achievement_commands::reopen_achievement,
+            commands::achievement_commands::delete_achievement,
             commands::game_commands::list_games,
             commands::game_commands::get_game,
             commands::game_commands::create_game,

@@ -272,7 +272,8 @@ body {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   padding: 7px 9px;
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -282,9 +283,22 @@ body {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 33px;
 }
 
 .form-error {
@@ -488,10 +502,127 @@ body {
   gap: 6px;
 }
 
-/* Journal */
+/* Achievements / Journal */
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.section-head h2,
 .journal h2 {
   font-size: 16px;
-  margin: 0 0 12px;
+  margin: 0;
+}
+
+.section-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.achievements {
+  margin-bottom: 28px;
+}
+
+.achievement-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.achievement-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.achievement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.achievement {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.achievement-completed {
+  border-color: #2e466f;
+}
+
+.achievement-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.achievement-title-row h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.achievement-description {
+  margin: 8px 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.achievement-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.achievement-badge-completed {
+  color: #5b8def;
+  border-color: #2e466f;
+}
+
+.achievement-badge-in_progress {
+  color: #d8b14a;
+  border-color: #5a4d22;
+}
+
+.achievement-badge-planned {
+  color: var(--text-muted);
+}
+
+.achievement-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.progress-track {
+  width: min(220px, 100%);
+  height: 8px;
+  overflow: hidden;
+  background: var(--bg-input);
+  border-radius: 100px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.journal h2 {
+  margin-bottom: 12px;
 }
 
 .composer-box {

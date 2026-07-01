@@ -72,10 +72,12 @@ xareon/
 │   ├── main.ts                 # app shell + sidebar navigation
 │   ├── styles.css              # dark, minimal theme
 │   ├── api/
+│   │   ├── achievements.ts     # wrappers over achievement commands
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
 │   │   └── settings.ts         # wrappers over get_settings/update_settings
 │   ├── types/
+│   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
 │   │   ├── journal.ts          # JournalEntry + inputs
@@ -86,7 +88,7 @@ xareon/
 │   └── views/
 │       ├── games-view.ts       # game browser: filters, sort, table
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
-│       ├── game-detail.ts      # game summary + journal timeline
+│       ├── game-detail.ts      # game summary + achievements + journal timeline
 │       └── settings-view.ts    # settings page (load + save)
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
@@ -101,16 +103,19 @@ xareon/
         ├── state.rs            # AppState { db: DatabaseManager }
         ├── error.rs            # AppError / AppResult
         ├── domain/
+        │   ├── achievement.rs  # Achievement, AchievementStatus + inputs
         │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
         │   ├── genre.rs        # Genre + normalize()
         │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
         │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
+        │   ├── achievement_repository.rs # achievements table
         │   ├── game_repository.rs     # games table + browser query + genre hydration
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
+        │   ├── achievement_service.rs # validation + progress/status rules
         │   ├── game_service.rs     # GameService (validation + game/genre orchestration)
         │   ├── genre_service.rs    # GenreService (list genres)
         │   ├── journal_service.rs  # JournalService (validation, ensures game exists)
@@ -121,6 +126,7 @@ xareon/
         ├── config/            # application configuration — reserved
         ├── events/            # domain events — reserved for future use
         ├── commands/
+        │   ├── achievement_commands.rs # achievement #[tauri::command] handlers
         │   ├── game_commands.rs     # game #[tauri::command] handlers (writes in a tx)
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
@@ -132,7 +138,8 @@ xareon/
         └── migrations/
             ├── 0001_init.sql            # games table
             ├── 0002_genres_journal.sql  # genres, game_genres, journal_entries
-            └── 0003_settings.sql        # settings key-value store
+            ├── 0003_settings.sql        # settings key-value store
+            └── 0004_achievements.sql    # user-defined personal achievements
 ```
 
 ## 4. Technology stack
@@ -224,7 +231,29 @@ settings are added; a new setting is a new key, not a new column).
 | value      | TEXT | NOT NULL (cleared fields stored as empty string)   |
 | updated_at | TEXT | NOT NULL, default `datetime('now')`; set on update |
 
+`achievements` — user-defined personal milestones for a game. These are deliberately
+universal rather than template-driven: a row can represent clearing a location,
+maxing out gear, finishing an ending, a self-imposed challenge, or any other
+game-specific accomplishment.
+| column           | type    | notes                                                      |
+|------------------|---------|------------------------------------------------------------|
+| id               | INTEGER | PK, autoincrement                                          |
+| game_id          | INTEGER | NOT NULL, FK → games(id) ON DELETE CASCADE                 |
+| title            | TEXT    | NOT NULL                                                   |
+| description      | TEXT    | nullable                                                   |
+| category         | TEXT    | nullable, free text (e.g. Locations, Gear, Endings)        |
+| status           | TEXT    | NOT NULL, CHECK `planned`/`in_progress`/`completed`        |
+| progress_current | INTEGER | nullable, CHECK >= 0                                       |
+| progress_target  | INTEGER | nullable, CHECK > 0; current cannot exceed target          |
+| progress_unit    | TEXT    | nullable (%, level, secrets, locations, etc.)              |
+| completed_at     | TEXT    | nullable; set when completed, cleared when reopened        |
+| is_hidden        | INTEGER | boolean 0/1 for non-obvious or spoiler-like achievements   |
+| display_order    | INTEGER | NOT NULL, manual ordering within a game                    |
+| created_at       | TEXT    | NOT NULL, default `datetime('now')`                        |
+| updated_at       | TEXT    | NOT NULL, default `datetime('now')`; set on update         |
+
 **Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`.
+**Achievement statuses:** `planned`, `in_progress`, `completed`.
 
 ## 7. Modules (current)
 
@@ -246,6 +275,13 @@ settings are added; a new setting is a new key, not a new column).
 - **Journal** — per-game diary, a first-class entity. Commands: `list_journal_entries`
   (newest first), `create_journal_entry`, `update_journal_entry`, `delete_journal_entry`.
   In the UI, opening a game shows its summary and journal timeline.
+- **Achievements** — per-game user-defined accomplishments/personal milestones, not
+  platform-specific achievement imports and not a fixed template system. Commands:
+  `list_achievements`, `create_achievement`, `update_achievement`,
+  `set_achievement_progress`, `complete_achievement`, `reopen_achievement`,
+  `delete_achievement`. The service validates flexible optional progress and
+  auto-completes an achievement when `progressCurrent >= progressTarget`. In the UI,
+  opening a game shows Achievements above the Journal, grouped by free-text category.
 
 - **Settings** — a centralized, extensible settings system stored in SQLite as a
   key-value store, designed to grow as future features need configuration.
@@ -258,8 +294,9 @@ settings are added; a new setting is a new key, not a new column).
   integration itself is not implemented). Saving runs inside a transaction so all
   settings commit atomically.
 
-The frontend navigation lists future modules (Timeline, Achievements, Statistics) as
-disabled placeholders. Settings is a live nav entry.
+The frontend navigation lists future global modules (Timeline, Achievements,
+Statistics) as disabled placeholders. Per-game achievements are live inside game details;
+there is not yet a global achievements dashboard. Settings is a live nav entry.
 
 ## 8. Conventions
 
@@ -304,8 +341,9 @@ disabled placeholders. Settings is a live nav entry.
 ## 10. Known limitations
 
 - Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), the
-  per-game **Journal**, and **Settings** (user identifier + Google Drive folder URL).
-  Not yet built: personal tags, screenshot gallery, achievements, statistics, timeline.
+  per-game **Journal**, per-game **Achievements**, and **Settings** (user identifier +
+  Google Drive folder URL). Not yet built: personal tags, screenshot gallery,
+  statistics, timeline, global achievements dashboard.
 - Dates are stored as plain ISO/`datetime('now')` strings (`TEXT`, UTC); no calendar or
   timezone handling beyond formatting in the UI.
 - The browser query has no pagination yet (fine for a personal library; revisit if needed).
@@ -333,13 +371,14 @@ Adding a module (e.g. Journal) end-to-end:
 ## 12. Roadmap
 
 Done: journal entries with date/time; multi-genre (normalized); search, filtering &
-sorting; centralized settings (user identifier + Google Drive folder URL).
+sorting; centralized settings (user identifier + Google Drive folder URL); per-game
+user-defined achievements with optional progress.
 
 Specified initial scope still to build:
 - Timeline view (cross-game).
 - Personal tags.
 - Screenshot gallery.
-- Universal achievements system (per game; custom achievements; progress; hidden flag).
+- Global achievements dashboard (per-game custom achievements already exist).
 - Statistics page (incl. genre statistics, enabled by the normalized genres).
 
 Future expansion (from the spec):

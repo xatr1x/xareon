@@ -5,8 +5,8 @@ import { renderSettingsView } from "./views/settings-view";
 
 /**
  * Application shell: a fixed sidebar with navigation and a content area. Each nav
- * entry maps to a view renderer. Future modules (Timeline, Achievements, Stats…)
- * register here without touching existing views.
+ * entry maps to a view renderer. Future global modules (Timeline, Stats…) register
+ * here without touching existing views.
  */
 
 interface NavItem {
