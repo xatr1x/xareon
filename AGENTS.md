@@ -88,7 +88,7 @@ xareon/
 │   └── views/
 │       ├── games-view.ts       # game browser: filters, sort, table
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
-│       ├── game-detail.ts      # game summary + achievements + journal timeline
+│       ├── game-detail.ts      # tabbed game detail (overview/achievements/journal/details)
 │       └── settings-view.ts    # settings page (load + save)
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
@@ -274,16 +274,21 @@ game-specific accomplishment.
   (used for input suggestions; ready for future genre stats/management).
 - **Journal** — per-game diary, a first-class entity. Commands: `list_journal_entries`
   (newest first), `create_journal_entry`, `update_journal_entry`, `delete_journal_entry`.
-  In the UI, opening a game shows its summary and journal timeline. Long journal entry
-  bodies are collapsed by default with a Show all/Show less toggle.
+  In the UI, opening a game exposes Journal as a dedicated game-detail tab. Long journal
+  entry bodies are collapsed by default with a Show all/Show less toggle.
 - **Achievements** — per-game user-defined accomplishments/personal milestones, not
   platform-specific achievement imports and not a fixed template system. Commands:
   `list_achievements`, `create_achievement`, `update_achievement`,
   `set_achievement_progress`, `complete_achievement`, `reopen_achievement`,
   `delete_achievement`. The service validates flexible optional progress and
   auto-completes an achievement when `progressCurrent >= progressTarget`. In the UI,
-  opening a game shows Achievements above the Journal, grouped by free-text category.
-  Long achievement descriptions are collapsed by default with a Show all/Show less toggle.
+  opening a game exposes Achievements as a dedicated game-detail tab with grid cards,
+  circular progress indicators, and free-text category grouping. Long achievement
+  descriptions are collapsed by default with a Show all/Show less toggle.
+
+Game detail is a tabbed frontend view: Overview (summary cards + latest journal context),
+Achievements, Journal, and Details. The global sidebar Achievements entry remains a
+disabled placeholder for a future cross-game dashboard.
 
 - **Settings** — a centralized, extensible settings system stored in SQLite as a
   key-value store, designed to grow as future features need configuration.
