@@ -466,6 +466,12 @@ body {
   text-decoration: underline;
 }
 
+.show-more {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
 .genres-cell {
   color: var(--text-muted);
   max-width: 240px;
@@ -579,6 +585,11 @@ body {
   color: var(--text-muted);
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.collapsible-text .achievement-description,
+.collapsible-text .entry-body {
+  margin-bottom: 0;
 }
 
 .achievement-actions {

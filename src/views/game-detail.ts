@@ -16,6 +16,9 @@ import type { JournalEntry } from "../types/journal";
 
 type AchievementFormInput = Omit<NewAchievement, "displayOrder"> & { displayOrder: number };
 
+const COLLAPSED_TEXT_CHARS = 520;
+const COLLAPSED_TEXT_LINES = 6;
+
 /**
  * Game detail: a summary header, user-defined achievements and the game's
  * journal timeline.
@@ -88,6 +91,48 @@ function metaItem(label: string, value: string): HTMLElement {
     el("span", { class: "muted" }, [`${label}: `]),
     el("span", {}, [value]),
   ]);
+}
+
+function collapsibleText(text: string, className: string): HTMLElement {
+  if (!shouldCollapseText(text)) {
+    return el("p", { class: className }, [text]);
+  }
+
+  let expanded = false;
+  const body = el("p", { class: className }, [collapsedText(text)]);
+  const toggle = el(
+    "button",
+    {
+      class: "link show-more",
+      onclick: () => {
+        expanded = !expanded;
+        body.textContent = expanded ? text : collapsedText(text);
+        toggle.textContent = expanded ? "Show less" : "Show all";
+      },
+    },
+    ["Show all"],
+  );
+
+  return el("div", { class: "collapsible-text" }, [body, toggle]);
+}
+
+function shouldCollapseText(text: string): boolean {
+  return text.length > COLLAPSED_TEXT_CHARS || text.split(/\r?\n/).length > COLLAPSED_TEXT_LINES;
+}
+
+function collapsedText(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const linePreview =
+    lines.length > COLLAPSED_TEXT_LINES ? lines.slice(0, COLLAPSED_TEXT_LINES).join("\n") : text;
+
+  if (linePreview.length <= COLLAPSED_TEXT_CHARS) {
+    return `${linePreview.trimEnd()}...`;
+  }
+
+  const preview = linePreview.slice(0, COLLAPSED_TEXT_CHARS).trimEnd();
+  const lastSpace = preview.lastIndexOf(" ");
+  const trimmed = lastSpace > COLLAPSED_TEXT_CHARS * 0.65 ? preview.slice(0, lastSpace) : preview;
+  return `${trimmed.trimEnd()}...`;
 }
 
 function achievementsSection(
@@ -179,7 +224,7 @@ function achievementCard(
         ]),
       ]),
       ...(achievement.description
-        ? [el("p", { class: "achievement-description" }, [achievement.description])]
+        ? [collapsibleText(achievement.description, "achievement-description")]
         : []),
       ...(progress ? [progress] : []),
       ...(completedAt ? [completedAt] : []),
@@ -471,7 +516,7 @@ function entryCard(entry: JournalEntry, reload: () => Promise<void>): HTMLElemen
           ),
         ]),
       ]),
-      el("p", { class: "entry-body" }, [entry.body]),
+      collapsibleText(entry.body, "entry-body"),
     );
   };
 

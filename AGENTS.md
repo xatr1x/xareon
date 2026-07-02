@@ -274,7 +274,8 @@ game-specific accomplishment.
   (used for input suggestions; ready for future genre stats/management).
 - **Journal** — per-game diary, a first-class entity. Commands: `list_journal_entries`
   (newest first), `create_journal_entry`, `update_journal_entry`, `delete_journal_entry`.
-  In the UI, opening a game shows its summary and journal timeline.
+  In the UI, opening a game shows its summary and journal timeline. Long journal entry
+  bodies are collapsed by default with a Show all/Show less toggle.
 - **Achievements** — per-game user-defined accomplishments/personal milestones, not
   platform-specific achievement imports and not a fixed template system. Commands:
   `list_achievements`, `create_achievement`, `update_achievement`,
@@ -282,6 +283,7 @@ game-specific accomplishment.
   `delete_achievement`. The service validates flexible optional progress and
   auto-completes an achievement when `progressCurrent >= progressTarget`. In the UI,
   opening a game shows Achievements above the Journal, grouped by free-text category.
+  Long achievement descriptions are collapsed by default with a Show all/Show less toggle.
 
 - **Settings** — a centralized, extensible settings system stored in SQLite as a
   key-value store, designed to grow as future features need configuration.
