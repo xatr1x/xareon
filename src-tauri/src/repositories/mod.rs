@@ -7,3 +7,4 @@ pub mod genre_repository;
 pub mod journal_repository;
 pub mod settings_repository;
 pub mod play_session_repository;
+pub mod statistics_repository;

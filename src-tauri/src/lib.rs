@@ -114,6 +114,7 @@ pub fn run() {
             commands::play_session_commands::start_play_session,
             commands::play_session_commands::heartbeat_play_session,
             commands::play_session_commands::stop_play_session,
+            commands::statistics_commands::get_statistics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xareon");

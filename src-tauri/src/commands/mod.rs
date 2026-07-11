@@ -8,3 +8,4 @@ pub mod genre_commands;
 pub mod journal_commands;
 pub mod settings_commands;
 pub mod play_session_commands;
+pub mod statistics_commands;

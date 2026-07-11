@@ -2,6 +2,7 @@ import "./styles.css";
 import { listen } from "@tauri-apps/api/event";
 import { el } from "./ui/dom";
 import { renderGamesView } from "./views/games-view";
+import { renderStatisticsView } from "./views/statistics-view";
 import { renderSettingsView } from "./views/settings-view";
 
 /**
@@ -21,7 +22,7 @@ const NAV: NavItem[] = [
   { id: "games", label: "Games", render: renderGamesView, enabled: true },
   { id: "timeline", label: "Timeline", render: placeholder("Timeline"), enabled: false },
   { id: "achievements", label: "Achievements", render: placeholder("Achievements"), enabled: false },
-  { id: "stats", label: "Statistics", render: placeholder("Statistics"), enabled: false },
+  { id: "stats", label: "Statistics", render: renderStatisticsView, enabled: true },
   { id: "settings", label: "Settings", render: renderSettingsView, enabled: true },
 ];
 

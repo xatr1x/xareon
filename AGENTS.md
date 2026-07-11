@@ -78,13 +78,15 @@ xareon/
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
 │   │   ├── play-sessions.ts    # manual play tracking + today/week play-time totals
+│   │   ├── statistics.ts       # wrapper over get_statistics
 │   │   └── settings.ts         # wrappers over get_settings/update_settings
 │   ├── types/
 │   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
 │   │   ├── journal.ts          # JournalEntry + inputs
-│   │   ├── play-session.ts     # PlaySession
+│   │   ├── play-session.ts     # PlaySession + PlayTimeTotals
+│   │   ├── statistics.ts       # Statistics aggregate + StatBar/StatsSummary/granularity
 │   │   └── settings.ts         # Settings
 │   ├── ui/
 │   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
@@ -93,6 +95,7 @@ xareon/
 │       ├── games-view.ts       # game browser: filters, sort, table + today/week play summary
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
 │       ├── game-detail.ts      # tabbed game detail (overview/achievements/journal/details) + Edit/Delete
+│       ├── statistics-view.ts  # all-time dashboard: KPIs, heatmap, hand-rolled charts
 │       └── settings-view.ts    # settings page (load + save)
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
@@ -112,6 +115,7 @@ xareon/
         │   ├── genre.rs        # Genre + normalize()
         │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
         │   ├── play_session.rs # timestamped manual play session
+        │   ├── statistics.rs   # Statistics aggregate + StatBar/StatsSummary/StatsGranularity
         │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
         │   ├── achievement_repository.rs # achievements table
@@ -119,6 +123,7 @@ xareon/
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
         │   ├── play_session_repository.rs # sessions + cached game totals + today/week aggregates
+        │   ├── statistics_repository.rs # read-only GROUP BY aggregates for the dashboard
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
         │   ├── achievement_service.rs # validation + progress/status rules
@@ -126,6 +131,7 @@ xareon/
         │   ├── genre_service.rs    # GenreService (list genres)
         │   ├── journal_service.rs  # JournalService (validation, ensures game exists)
         │   ├── play_session_service.rs # single-session tracking lifecycle
+        │   ├── statistics_service.rs # assembles the Statistics payload
         │   └── settings_service.rs # SettingsService (maps typed Settings ↔ KV keys)
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
@@ -141,6 +147,7 @@ xareon/
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
         │   ├── play_session_commands.rs # Play/Stop/heartbeat + play-time totals + Dock icon
+        │   ├── statistics_commands.rs # get_statistics (read-only)
         │   └── settings_commands.rs # get_settings, update_settings (write in a tx)
         ├── db/
         │   ├── connection.rs   # open() + enable FKs + run migrations
@@ -386,9 +393,26 @@ disabled placeholder for a future cross-game dashboard.
   minute worker owns both heartbeat updates and indicator refreshes, so crash recovery
   remains accurate even when game detail is not open or the window is in the background.
 
-The frontend navigation lists future global modules (Timeline, Achievements,
-Statistics) as disabled placeholders. Per-game achievements are live inside game details;
-there is not yet a global achievements dashboard. Settings is a live nav entry.
+- **Statistics** — an all-time dashboard over the tracked history. Command:
+  `get_statistics(granularity)` → a single `Statistics` aggregate. Read-only; a handful of
+  `GROUP BY … SUM/COUNT` queries run in one connection at view load (and on granularity
+  change), never on a timer. Every play-time figure comes from **completed** sessions,
+  attributed to the local day they ended on — the same convention as the today/week totals.
+  - Contents: KPI tiles (total play time, this year, completed, playing now, backlog,
+    average rating); a GitHub-style daily **activity heatmap**; **play time over time**
+    bucketed by `week`/`month`/`year` via the header granularity toggle (the only control —
+    all other cards are all-time); **when you play** by weekday; **top games** and **time
+    by genre** (a multi-genre game contributes to each of its genres); **library by status**
+    (`completed_100` folded into `completed`); and a **ratings** histogram.
+  - `StatBar { key, value }` is the shared point type — `value` is seconds for time series
+    and a plain count otherwise; the frontend produces all display labels and fills missing
+    time buckets. Charts are **hand-rolled** (framework-free, matching the UI convention):
+    the heatmap and bars are CSS-sized `div`s, the status donut is a CSS `conic-gradient`.
+    No charting library is used or wanted.
+
+The frontend navigation lists Timeline and a global Achievements dashboard as disabled
+placeholders. Per-game achievements are live inside game details; there is not yet a global
+achievements dashboard. Games, Statistics and Settings are live nav entries.
 
 ## 8. Conventions
 
