@@ -1,6 +1,6 @@
 import { genresApi } from "../api/games";
 import { el } from "../ui/dom";
-import { GAME_STATUSES, STATUS_LABELS, type Game, type GameInput } from "../types/game";
+import { STATUS_LABELS, VISIBLE_GAME_STATUSES, type Game, type GameInput } from "../types/game";
 
 /** Split a comma-separated genre input into trimmed, non-empty names. */
 function parseGenres(value: string): string[] {
@@ -62,8 +62,11 @@ export function openGameForm(options: {
   const statusSelect = el(
     "select",
     { name: "status" },
-    GAME_STATUSES.map((s) =>
-      el("option", { value: s, selected: (game?.status ?? "planned") === s }, [STATUS_LABELS[s]]),
+    VISIBLE_GAME_STATUSES.map((s) =>
+      el("option", {
+        value: s,
+        selected: (game?.status === "completed_100" ? "completed" : (game?.status ?? "planned")) === s,
+      }, [STATUS_LABELS[s]]),
     ),
   );
   const statusRow = el("label", { class: "field" }, [el("span", {}, ["Status"]), statusSelect]);

@@ -7,6 +7,7 @@ import { confirmDialog } from "../ui/confirm";
 import {
   formatDate,
   formatDateTime,
+  formatCalendarPlayPeriod,
   formatRelativeTime,
   formatSessionTimer,
   formatTrackedDuration,
@@ -176,7 +177,8 @@ function overviewSection(game: Game, achievements: Achievement[], entries: Journ
   return el("section", { class: "detail-panel overview-panel" }, [
     el("div", { class: "overview-grid" }, [
       overviewCard("Status", STATUS_LABELS[game.status]),
-      overviewCard("Total play time", formatTrackedDuration(game.totalPlayTimeSeconds)),
+      overviewCard("Play period", formatCalendarPlayPeriod(game.startedAt, game.finishedAt)),
+      overviewCard("Total play time", trackedPlayTime(game)),
       ...(game.isPlayingNow && game.activeSessionStartedAt
         ? [liveSessionCard(game.activeSessionStartedAt)]
         : []),
@@ -203,6 +205,12 @@ function overviewSection(game: Game, achievements: Achievement[], entries: Journ
       ]),
     ]),
   ]);
+}
+
+function trackedPlayTime(game: Game): string {
+  return game.completedSessionsCount > 0
+    ? formatTrackedDuration(game.totalPlayTimeSeconds)
+    : "—";
 }
 
 function relativeTimeValue(value: string): HTMLElement {
@@ -274,8 +282,9 @@ function detailsSection(game: Game): HTMLElement {
     ["Release year", game.releaseYear === null ? "—" : String(game.releaseYear)],
     ["Started", formatDate(game.startedAt)],
     ["Finished", formatDate(game.finishedAt)],
+    ["Play period", formatCalendarPlayPeriod(game.startedAt, game.finishedAt)],
     ["Rating", game.rating === null ? "—" : `${game.rating}/10`],
-    ["Total play time", formatTrackedDuration(game.totalPlayTimeSeconds)],
+    ["Total play time", trackedPlayTime(game)],
     ["Last played", game.lastPlayedAt ? formatRelativeTime(game.lastPlayedAt) : "—"],
     ["Created", formatDateTime(game.createdAt)],
     ["Updated", formatDateTime(game.updatedAt)],

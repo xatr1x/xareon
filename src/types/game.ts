@@ -12,6 +12,11 @@ export const GAME_STATUSES = [
   "dropped",
 ] as const;
 
+/** Statuses currently exposed in UI controls. `completed_100` remains a valid backend value. */
+export const VISIBLE_GAME_STATUSES = GAME_STATUSES.filter(
+  (status) => status !== "completed_100",
+);
+
 export type GameStatus = (typeof GAME_STATUSES)[number];
 
 export const STATUS_LABELS: Record<GameStatus, string> = {
@@ -19,7 +24,7 @@ export const STATUS_LABELS: Record<GameStatus, string> = {
   playing: "Playing",
   paused: "Paused",
   completed: "Completed",
-  completed_100: "Completed 100%",
+  completed_100: "Completed",
   dropped: "Dropped",
 };
 
@@ -37,6 +42,7 @@ export interface Game {
   rating: number | null;
   coverPath: string | null;
   totalPlayTimeSeconds: number;
+  completedSessionsCount: number;
   isPlayingNow: boolean;
   lastPlayedAt: string | null;
   activeSessionStartedAt: string | null;

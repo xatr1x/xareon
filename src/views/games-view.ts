@@ -1,10 +1,15 @@
 import { gamesApi } from "../api/games";
 import { clear, el } from "../ui/dom";
 import { confirmDialog } from "../ui/confirm";
-import { formatRelativeTime, formatSessionTimer, formatTrackedDuration } from "../ui/format";
+import {
+  formatCalendarPlayPeriod,
+  formatRelativeTime,
+  formatSessionTimer,
+  formatTrackedDuration,
+} from "../ui/format";
 import {
   GAME_SORTS,
-  GAME_STATUSES,
+  VISIBLE_GAME_STATUSES,
   SORT_LABELS,
   STATUS_LABELS,
   type Game,
@@ -202,7 +207,7 @@ function buildToolbar(reload: () => Promise<void>): HTMLElement {
 }
 
 function buildStatusChips(reload: () => Promise<void>): HTMLElement {
-  const chips = GAME_STATUSES.map((s) => {
+  const chips = VISIBLE_GAME_STATUSES.map((s) => {
     const chip = el(
       "button",
       {
@@ -338,7 +343,12 @@ function lastPlayedLabel(value: string, prefix = "Last played "): HTMLElement {
 }
 
 function trackingCell(game: Game): HTMLElement {
-  const content: Node[] = [el("strong", {}, [formatTrackedDuration(game.totalPlayTimeSeconds)])];
+  const content: Node[] = [];
+  if (game.completedSessionsCount > 0) {
+    content.push(el("strong", {}, [formatTrackedDuration(game.totalPlayTimeSeconds)]));
+  } else if (!game.isPlayingNow) {
+    content.push(el("strong", {}, ["—"]));
+  }
   if (game.isPlayingNow && game.activeSessionStartedAt) {
     content.push(liveTimer(game.activeSessionStartedAt));
   } else if (game.status === "playing" && game.lastPlayedAt) {
@@ -359,6 +369,7 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
         ...(game.isPlayingNow ? [el("span", { class: "playing-indicator", title: "Playing now" })] : []),
       ]),
       el("td", { class: "genres-cell" }, [game.genres.length ? game.genres.join(", ") : "—"]),
+      el("td", { class: "period-cell" }, [formatCalendarPlayPeriod(game.startedAt, game.finishedAt)]),
       el("td", {}, [trackingCell(game)]),
       el("td", {}, [el("span", { class: `badge status-${game.status}` }, [STATUS_LABELS[game.status]])]),
       el("td", { class: "num" }, [game.rating === null ? "—" : `${game.rating}/10`]),
@@ -401,6 +412,7 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
       el("tr", {}, [
         el("th", {}, ["Title"]),
         el("th", {}, ["Genres"]),
+        el("th", {}, ["Play period"]),
         el("th", {}, ["Play time"]),
         el("th", {}, ["Status"]),
         el("th", { class: "num" }, ["Rating"]),

@@ -286,10 +286,20 @@ constant guarantees at most one unfinished session in the entire database.
 
 - **Games** — full CRUD plus a flexible browser query. Commands: `list_games` (takes an
   optional `GameQuery`), `get_game`, `create_game`, `update_game`, `delete_game`.
-  - The browser table shows a compact **Time** column instead of platform: completed
-    date ranges render as a calendar duration (for example, `1 mo, 3 d`), while playing
-    games show time since their start date (for example, `Yesterday`). Platform remains
-    available in the game form, detail view, and advanced browser filter.
+  - The browser omits platform as a dedicated column; platform remains available in the
+    game form, detail view, and advanced browser filter. Its place is used by the
+    separate Play period and Play time measures described below.
+  - The browser and game overview keep calendar **Play period** separate from tracked
+    **Play time**. Play period is a human calendar duration from `startedAt` to
+    `finishedAt` (`1 month, 4 days`), or to today with `so far` while unfinished.
+    `Game.completedSessionsCount` comes from a lightweight correlated count and lets the
+    UI distinguish missing historical tracking data from a real short session. Any game
+    with no completed sessions displays `—` regardless of status (including planned,
+    paused and dropped legacy rows). A real completed session under one minute displays
+    `<1m`; an active session remains visible through its separate live timer.
+  - `completed_100` remains a valid backend/database status for compatibility but is
+    intentionally absent from filters and game forms. Existing rows with that status are
+    rendered everywhere as ordinary `Completed` and become `completed` if edited/saved.
   - **GameQuery** is the single query surface (not many narrow endpoints): `search`
     (title), `statuses` (OR), `platforms` (OR), `genres` + `genreMatch` (any/all),
     `releaseYear`/`startedYear`/`finishedYear`/`playedYear`, `minRating`/`maxRating`,

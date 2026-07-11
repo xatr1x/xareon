@@ -35,25 +35,44 @@ function calendarDaysBetween(from: Date, to: Date): number {
   return Math.round((toDay - fromDay) / 86_400_000);
 }
 
-/** Formats a calendar duration compactly, for example `1 mo, 3 d`. */
-export function formatPlayDuration(startedAt: string, finishedAt: string): string {
+/** Human calendar duration between starting and finishing a game. */
+export function formatCalendarPlayPeriod(
+  startedAt: string | null,
+  finishedAt: string | null,
+): string {
+  if (!startedAt) return "—";
   const start = parseCalendarDate(startedAt);
-  const finish = parseCalendarDate(finishedAt);
+  const finish = finishedAt ? parseCalendarDate(finishedAt) : new Date();
   if (!start || !finish) return "—";
-  if (calendarDaysBetween(start, finish) <= 0) return "Same day";
+  const totalDays = calendarDaysBetween(start, finish);
+  if (totalDays < 0) return "—";
+  if (totalDays === 0) return finishedAt ? "Same day" : "Today";
 
   let months = (finish.getFullYear() - start.getFullYear()) * 12 + finish.getMonth() - start.getMonth();
-  let monthMark = new Date(start.getFullYear(), start.getMonth() + months, start.getDate());
+  let monthMark = addCalendarMonths(start, months);
   if (monthMark > finish) {
     months -= 1;
-    monthMark = new Date(start.getFullYear(), start.getMonth() + months, start.getDate());
+    monthMark = addCalendarMonths(start, months);
   }
 
   const days = calendarDaysBetween(monthMark, finish);
   const parts: string[] = [];
-  if (months > 0) parts.push(`${months} mo`);
-  if (days > 0) parts.push(`${days} d`);
-  return parts.join(", ") || "Same day";
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  if (years > 0) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+  if (remainingMonths > 0) {
+    parts.push(`${remainingMonths} ${remainingMonths === 1 ? "month" : "months"}`);
+  }
+  if (days > 0) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+  const result = parts.join(", ") || "Same day";
+  return finishedAt ? result : `${result} so far`;
+}
+
+function addCalendarMonths(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(date.getDate(), lastDay));
+  return target;
 }
 
 /** Formats a past start date relative to today, for example `Yesterday` or `2 wks ago`. */
@@ -79,6 +98,7 @@ export function parseBackendDateTime(value: string): Date {
 
 /** Compact accumulated play time, rounded down to completed minutes. */
 export function formatTrackedDuration(seconds: number): string {
+  if (seconds < 60) return "<1m";
   const minutes = Math.floor(Math.max(0, seconds) / 60);
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;

@@ -239,6 +239,11 @@ body {
   white-space: nowrap;
 }
 
+.data-table .period-cell {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
 .data-table .actions {
   display: flex;
   gap: 6px;
