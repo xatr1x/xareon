@@ -24,7 +24,10 @@ pub trait GameRepository {
 /// Columns selected when reading a full game row, in `map_row` order. `genres`
 /// is not a column — it is hydrated separately.
 const COLUMNS: &str = "id, title, platform, developer, publisher, release_year, \
-    started_at, finished_at, status, rating, cover_path, created_at, updated_at";
+    started_at, finished_at, status, rating, cover_path, total_play_time_seconds, \
+    is_playing_now, last_played_at, \
+    (SELECT started_at FROM play_sessions ps WHERE ps.game_id = games.id AND ps.ended_at IS NULL) \
+    AS active_session_started_at, created_at, updated_at";
 
 pub struct SqliteGameRepository<'a> {
     conn: &'a Connection,
@@ -49,6 +52,10 @@ impl<'a> SqliteGameRepository<'a> {
             status: row.get("status")?,
             rating: row.get("rating")?,
             cover_path: row.get("cover_path")?,
+            total_play_time_seconds: row.get("total_play_time_seconds")?,
+            is_playing_now: row.get("is_playing_now")?,
+            last_played_at: row.get("last_played_at")?,
+            active_session_started_at: row.get("active_session_started_at")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })

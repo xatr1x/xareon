@@ -1,9 +1,16 @@
 import { achievementsApi } from "../api/achievements";
 import { gamesApi } from "../api/games";
 import { journalApi } from "../api/journal";
+import { playSessionsApi } from "../api/play-sessions";
 import { clear, el } from "../ui/dom";
 import { confirmDialog } from "../ui/confirm";
-import { formatDate, formatDateTime } from "../ui/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatRelativeTime,
+  formatSessionTimer,
+  formatTrackedDuration,
+} from "../ui/format";
 import {
   ACHIEVEMENT_STATUS_LABELS,
   ACHIEVEMENT_STATUSES,
@@ -41,10 +48,11 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
     clear(container);
     container.append(el("p", { class: "muted" }, ["Loading…"]));
     try {
-      const [game, achievements, entries] = await Promise.all([
+      const [game, achievements, entries, activeSession] = await Promise.all([
         gamesApi.get(gameId),
         achievementsApi.listForGame(gameId),
         journalApi.listForGame(gameId),
+        playSessionsApi.active(),
       ]);
       clear(container);
       const tabContent = el("div", { class: "detail-tab-content" });
@@ -53,7 +61,7 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
         tabContent.append(activeTabContent(activeTab, game, achievements, entries, load));
       };
       container.append(
-        header(game, onBack),
+        header(game, activeSession?.gameId ?? null, onBack, load),
         tabs(activeTab, (tab) => {
           activeTab = tab;
           renderActiveTab();
@@ -70,13 +78,52 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
   void load();
 }
 
-function header(game: Game, onBack: () => void): HTMLElement {
+function header(
+  game: Game,
+  activeGameId: number | null,
+  onBack: () => void,
+  reload: () => Promise<void>,
+): HTMLElement {
+  const controls: Node[] = [];
+  if (game.isPlayingNow) {
+    controls.push(playControl(game, reload));
+  } else if (activeGameId === null) {
+    controls.push(playControl(game, reload));
+  }
   return el("div", { class: "view-header" }, [
     el("div", { class: "detail-title" }, [
       el("button", { class: "btn btn-sm", onclick: onBack }, ["← Back"]),
       el("h1", {}, [game.title]),
+      ...(game.isPlayingNow ? [el("span", { class: "playing-indicator", title: "Playing now" })] : []),
     ]),
+    el("div", { class: "play-controls" }, controls),
   ]);
+}
+
+function playControl(game: Game, reload: () => Promise<void>): HTMLElement {
+  const errorMessage = el("span", { class: "form-error tracking-error" });
+  const button = el("button", {
+    class: `btn play-toggle ${game.isPlayingNow ? "stop" : "play"}`,
+    onclick: async () => {
+      button.setAttribute("disabled", "true");
+      try {
+        if (game.isPlayingNow) await playSessionsApi.stop(game.id);
+        else await playSessionsApi.start(game.id);
+        await reload();
+      } catch (error) {
+        button.removeAttribute("disabled");
+        errorMessage.textContent = String(error);
+      }
+    },
+  }, [game.isPlayingNow ? "■ Stop" : "▶ Play"]);
+
+  if (game.isPlayingNow) {
+    const heartbeat = window.setInterval(() => {
+      if (!button.isConnected) window.clearInterval(heartbeat);
+      else void playSessionsApi.heartbeat(game.id);
+    }, 60_000);
+  }
+  return el("div", { class: "play-control" }, [button, errorMessage]);
 }
 
 function tabs(activeTab: DetailTab, onSelect: (tab: DetailTab) => void): HTMLElement {
@@ -135,6 +182,13 @@ function overviewSection(game: Game, achievements: Achievement[], entries: Journ
   return el("section", { class: "detail-panel overview-panel" }, [
     el("div", { class: "overview-grid" }, [
       overviewCard("Status", STATUS_LABELS[game.status]),
+      overviewCard("Total play time", formatTrackedDuration(game.totalPlayTimeSeconds)),
+      ...(game.isPlayingNow && game.activeSessionStartedAt
+        ? [liveSessionCard(game.activeSessionStartedAt)]
+        : []),
+      ...(game.status === "playing" && game.lastPlayedAt
+        ? [lastPlayedCard(game.lastPlayedAt)]
+        : []),
       overviewCard("Achievements", achievementSummary),
       overviewCard("Journal entries", String(entries.length)),
       overviewCard("Rating", game.rating === null ? "—" : `${game.rating}/10`),
@@ -154,6 +208,33 @@ function overviewSection(game: Game, achievements: Achievement[], entries: Journ
           : el("p", { class: "muted" }, ["No journal entries yet."]),
       ]),
     ]),
+  ]);
+}
+
+function relativeTimeValue(value: string): HTMLElement {
+  const element = el("strong", {}, [formatRelativeTime(value)]);
+  const interval = window.setInterval(() => {
+    if (!element.isConnected) window.clearInterval(interval);
+    else element.textContent = formatRelativeTime(value);
+  }, 60_000);
+  return element;
+}
+
+function lastPlayedCard(value: string): HTMLElement {
+  return el("div", { class: "overview-card" }, [
+    el("span", { class: "muted" }, ["Last played"]),
+    relativeTimeValue(value),
+  ]);
+}
+
+function liveSessionCard(startedAt: string): HTMLElement {
+  const value = el("strong", { class: "session-timer" }, [formatSessionTimer(startedAt)]);
+  const interval = window.setInterval(() => {
+    if (!value.isConnected) window.clearInterval(interval);
+    else value.textContent = formatSessionTimer(startedAt);
+  }, 1000);
+  return el("div", { class: "overview-card live-session-card" }, [
+    el("span", { class: "muted" }, ["Current session"]), value,
   ]);
 }
 
@@ -200,6 +281,8 @@ function detailsSection(game: Game): HTMLElement {
     ["Started", formatDate(game.startedAt)],
     ["Finished", formatDate(game.finishedAt)],
     ["Rating", game.rating === null ? "—" : `${game.rating}/10`],
+    ["Total play time", formatTrackedDuration(game.totalPlayTimeSeconds)],
+    ["Last played", game.lastPlayedAt ? formatRelativeTime(game.lastPlayedAt) : "—"],
     ["Created", formatDateTime(game.createdAt)],
     ["Updated", formatDateTime(game.updatedAt)],
   ];

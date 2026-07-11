@@ -6,3 +6,4 @@ pub mod game_service;
 pub mod genre_service;
 pub mod journal_service;
 pub mod settings_service;
+pub mod play_session_service;

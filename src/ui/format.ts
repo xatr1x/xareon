@@ -72,3 +72,45 @@ export function formatTimeSince(startedAt: string): string {
   const months = Math.floor(days / 30);
   return `${months} mo${months === 1 ? "" : "s"} ago`;
 }
+
+export function parseBackendDateTime(value: string): Date {
+  return new Date(`${value.replace(" ", "T")}Z`);
+}
+
+/** Compact accumulated play time, rounded down to completed minutes. */
+export function formatTrackedDuration(seconds: number): string {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return remaining === 0 ? `${hours}h` : `${hours}h ${remaining}m`;
+}
+
+export function formatSessionTimer(startedAt: string): string {
+  const elapsed = Math.max(0, Math.floor((Date.now() - parseBackendDateTime(startedAt).getTime()) / 1000));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+/** Steam-like relative time for a past backend timestamp. */
+export function formatRelativeTime(value: string, now = Date.now()): string {
+  const timestamp = parseBackendDateTime(value).getTime();
+  if (Number.isNaN(timestamp)) return value;
+
+  const elapsedSeconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (elapsedSeconds < 60) return "just now";
+
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 365 * 24 * 60 * 60],
+    ["month", 30 * 24 * 60 * 60],
+    ["week", 7 * 24 * 60 * 60],
+    ["day", 24 * 60 * 60],
+    ["hour", 60 * 60],
+    ["minute", 60],
+  ];
+  const [unit, seconds] = units.find(([, size]) => elapsedSeconds >= size) ?? ["minute", 60];
+  const amount = Math.floor(elapsedSeconds / seconds);
+  return new Intl.RelativeTimeFormat("en", { numeric: "always" }).format(-amount, unit);
+}

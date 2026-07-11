@@ -21,6 +21,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "0004_achievements",
         sql: include_str!("../migrations/0004_achievements.sql"),
     },
+    Migration {
+        name: "0005_play_sessions",
+        sql: include_str!("../migrations/0005_play_sessions.sql"),
+    },
 ];
 
 struct Migration {

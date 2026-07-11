@@ -5,3 +5,4 @@ pub mod genre;
 pub mod achievement;
 pub mod journal;
 pub mod settings;
+pub mod play_session;

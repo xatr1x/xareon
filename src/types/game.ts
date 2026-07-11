@@ -36,6 +36,10 @@ export interface Game {
   status: GameStatus;
   rating: number | null;
   coverPath: string | null;
+  totalPlayTimeSeconds: number;
+  isPlayingNow: boolean;
+  lastPlayedAt: string | null;
+  activeSessionStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

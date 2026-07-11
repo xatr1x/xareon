@@ -59,6 +59,10 @@ pub struct Game {
     pub status: GameStatus,
     pub rating: Option<i64>,
     pub cover_path: Option<String>,
+    pub total_play_time_seconds: i64,
+    pub is_playing_now: bool,
+    pub last_played_at: Option<String>,
+    pub active_session_started_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

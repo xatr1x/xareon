@@ -19,6 +19,7 @@ use tauri::Manager;
 
 use crate::db::manager::DatabaseManager;
 use crate::state::AppState;
+use crate::repositories::play_session_repository::{PlaySessionRepository, SqlitePlaySessionRepository};
 
 /// Build and run the Tauri application: resolve the data directory, open the
 /// database (running migrations), register state and commands, then start.
@@ -28,10 +29,31 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let conn = db::connection::open(&data_dir.join("xareon.db"))?;
+            {
+                let tx = conn.unchecked_transaction()?;
+                SqlitePlaySessionRepository::new(&tx).recover_interrupted()?;
+                tx.commit()?;
+            }
             app.manage(AppState {
                 db: DatabaseManager::new(conn),
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let state = window.state::<AppState>();
+                let _ = state.db.with_connection(|conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    {
+                        let sessions = SqlitePlaySessionRepository::new(&tx);
+                        if let Some(active) = sessions.active()? {
+                            sessions.stop(active.game_id)?;
+                        }
+                    }
+                    tx.commit()?;
+                    Ok(())
+                });
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::achievement_commands::list_achievements,
@@ -53,6 +75,10 @@ pub fn run() {
             commands::journal_commands::delete_journal_entry,
             commands::settings_commands::get_settings,
             commands::settings_commands::update_settings,
+            commands::play_session_commands::get_active_play_session,
+            commands::play_session_commands::start_play_session,
+            commands::play_session_commands::heartbeat_play_session,
+            commands::play_session_commands::stop_play_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xareon");

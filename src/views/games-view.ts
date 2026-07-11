@@ -1,7 +1,7 @@
 import { gamesApi } from "../api/games";
 import { clear, el } from "../ui/dom";
 import { confirmDialog } from "../ui/confirm";
-import { formatPlayDuration, formatTimeSince } from "../ui/format";
+import { formatRelativeTime, formatSessionTimer, formatTrackedDuration } from "../ui/format";
 import {
   GAME_SORTS,
   GAME_STATUSES,
@@ -319,12 +319,32 @@ function emptyState(): HTMLElement {
   ]);
 }
 
-function gameTimeLabel(game: Game): string {
-  if (game.status === "playing") {
-    return game.startedAt ? formatTimeSince(game.startedAt) : "—";
-  }
+function liveTimer(startedAt: string): HTMLElement {
+  const timer = el("span", { class: "session-timer" }, [formatSessionTimer(startedAt)]);
+  const interval = window.setInterval(() => {
+    if (!timer.isConnected) window.clearInterval(interval);
+    else timer.textContent = formatSessionTimer(startedAt);
+  }, 1000);
+  return timer;
+}
 
-  return game.startedAt && game.finishedAt ? formatPlayDuration(game.startedAt, game.finishedAt) : "—";
+function lastPlayedLabel(value: string, prefix = "Last played "): HTMLElement {
+  const label = el("span", { class: "last-played" }, [`${prefix}${formatRelativeTime(value)}`]);
+  const interval = window.setInterval(() => {
+    if (!label.isConnected) window.clearInterval(interval);
+    else label.textContent = `${prefix}${formatRelativeTime(value)}`;
+  }, 60_000);
+  return label;
+}
+
+function trackingCell(game: Game): HTMLElement {
+  const content: Node[] = [el("strong", {}, [formatTrackedDuration(game.totalPlayTimeSeconds)])];
+  if (game.isPlayingNow && game.activeSessionStartedAt) {
+    content.push(liveTimer(game.activeSessionStartedAt));
+  } else if (game.status === "playing" && game.lastPlayedAt) {
+    content.push(lastPlayedLabel(game.lastPlayedAt));
+  }
+  return el("div", { class: "tracking-cell" }, content);
 }
 
 function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void>): HTMLElement {
@@ -336,9 +356,10 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
           { class: "link", onclick: () => renderGameDetail(root, game.id, () => renderGamesView(root)) },
           [game.title],
         ),
+        ...(game.isPlayingNow ? [el("span", { class: "playing-indicator", title: "Playing now" })] : []),
       ]),
       el("td", { class: "genres-cell" }, [game.genres.length ? game.genres.join(", ") : "—"]),
-      el("td", {}, [gameTimeLabel(game)]),
+      el("td", {}, [trackingCell(game)]),
       el("td", {}, [el("span", { class: `badge status-${game.status}` }, [STATUS_LABELS[game.status]])]),
       el("td", { class: "num" }, [game.rating === null ? "—" : `${game.rating}/10`]),
       el("td", { class: "actions" }, [
@@ -380,7 +401,7 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
       el("tr", {}, [
         el("th", {}, ["Title"]),
         el("th", {}, ["Genres"]),
-        el("th", {}, ["Time"]),
+        el("th", {}, ["Play time"]),
         el("th", {}, ["Status"]),
         el("th", { class: "num" }, ["Rating"]),
         el("th", {}, [""]),

@@ -77,12 +77,14 @@ xareon/
 │   │   ├── achievements.ts     # wrappers over achievement commands
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
+│   │   ├── play-sessions.ts    # wrappers over manual play tracking
 │   │   └── settings.ts         # wrappers over get_settings/update_settings
 │   ├── types/
 │   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
 │   │   ├── journal.ts          # JournalEntry + inputs
+│   │   ├── play-session.ts     # PlaySession
 │   │   └── settings.ts         # Settings
 │   ├── ui/
 │   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
@@ -109,18 +111,21 @@ xareon/
         │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
         │   ├── genre.rs        # Genre + normalize()
         │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
+        │   ├── play_session.rs # timestamped manual play session
         │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
         │   ├── achievement_repository.rs # achievements table
         │   ├── game_repository.rs     # games table + browser query + genre hydration
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
+        │   ├── play_session_repository.rs # sessions + cached game totals
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
         │   ├── achievement_service.rs # validation + progress/status rules
         │   ├── game_service.rs     # GameService (validation + game/genre orchestration)
         │   ├── genre_service.rs    # GenreService (list genres)
         │   ├── journal_service.rs  # JournalService (validation, ensures game exists)
+        │   ├── play_session_service.rs # single-session tracking lifecycle
         │   └── settings_service.rs # SettingsService (maps typed Settings ↔ KV keys)
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
@@ -132,6 +137,7 @@ xareon/
         │   ├── game_commands.rs     # game #[tauri::command] handlers (writes in a tx)
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
+        │   ├── play_session_commands.rs # Play/Stop/heartbeat + Dock icon
         │   └── settings_commands.rs # get_settings, update_settings (write in a tx)
         ├── db/
         │   ├── connection.rs   # open() + enable FKs + run migrations
@@ -141,7 +147,8 @@ xareon/
             ├── 0001_init.sql            # games table
             ├── 0002_genres_journal.sql  # genres, game_genres, journal_entries
             ├── 0003_settings.sql        # settings key-value store
-            └── 0004_achievements.sql    # user-defined personal achievements
+            ├── 0004_achievements.sql    # user-defined personal achievements
+            └── 0005_play_sessions.sql   # play history + cached totals
 ```
 
 ## 4. Technology stack
@@ -201,6 +208,9 @@ created with migrations applied on first launch.
 | cover_path    | TEXT    | nullable                                               |
 | created_at    | TEXT    | NOT NULL, default `datetime('now')`                    |
 | updated_at    | TEXT    | NOT NULL, default `datetime('now')`; set on update     |
+| total_play_time_seconds | INTEGER | NOT NULL; cached completed-session total       |
+| is_playing_now | INTEGER | boolean 0/1; fast projection of the active session    |
+| last_played_at | TEXT    | nullable; end time of the latest completed session    |
 
 `genres` — reusable genre entities (a game can have many; a genre many games).
 | column          | type    | notes                                              |
@@ -257,6 +267,18 @@ game-specific accomplishment.
 **Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`.
 **Achievement statuses:** `planned`, `in_progress`, `completed`.
 
+`play_sessions` — immutable manual real-play history. A partial unique index over a
+constant guarantees at most one unfinished session in the entire database.
+| column           | type    | notes                                                   |
+|------------------|---------|---------------------------------------------------------|
+| id               | INTEGER | PK, autoincrement                                       |
+| game_id          | INTEGER | FK → games(id) ON DELETE CASCADE                        |
+| started_at       | TEXT    | NOT NULL, UTC start                                     |
+| ended_at         | TEXT    | nullable only while globally active                    |
+| last_activity_at | TEXT    | NOT NULL; heartbeat updates once per minute             |
+| duration_seconds | INTEGER | nullable while active; non-negative and fixed on Stop  |
+| created_at       | TEXT    | NOT NULL, default `datetime('now')                     |
+
 ## 7. Modules (current)
 
 - **Games** — full CRUD plus a flexible browser query. Commands: `list_games` (takes an
@@ -307,6 +329,17 @@ disabled placeholder for a future cross-game dashboard.
   integration itself is not implemented). Saving runs inside a transaction so all
   settings commit atomically.
 
+- **Play tracking** — manual real-play sessions. Commands: `get_active_play_session`,
+  `start_play_session`, `heartbeat_play_session`, `stop_play_session`. Only one session
+  can be active globally. Play/Stop atomically update the session and cached game fields,
+  so reads never sum all history. Startup closes an interrupted session at its last
+  minute heartbeat; normal window close stops it at the current time. The browser and
+  game detail show total time, Steam-like relative last-played time for games with status `playing`, a live
+  `HH:MM:SS` timer and a subtle green indicator. Game detail has one Play/Stop control
+  and hides Play while another game is active. The Dock icon switches to a green
+  Play-badged PNG during tracking. On macOS this uses native
+  `NSApplication.setApplicationIconImage`; `window.set_icon` does not update the Dock.
+
 The frontend navigation lists future global modules (Timeline, Achievements,
 Statistics) as disabled placeholders. Per-game achievements are live inside game details;
 there is not yet a global achievements dashboard. Settings is a live nav entry.
@@ -353,10 +386,13 @@ there is not yet a global achievements dashboard. Settings is a live nav entry.
   The generated platform formats are committed under `src-tauri/icons/`; replace the seed
   and rerun that command to rebrand. Copy the generated `128x128.png` to
   `public/xareon-icon.png` so the sidebar brand uses the same icon at runtime.
+  The seed is a rounded macOS-style tile; `icon-playing.png` is the runtime green
+  Play-badged state. Runtime decoding uses Tauri's `image-png` feature.
 
 ## 10. Known limitations
 
-- Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), the
+- Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), manual
+  **Play tracking** (single active session, history and cached total), the
   per-game **Journal**, per-game **Achievements**, and **Settings** (user identifier +
   Google Drive folder URL). Not yet built: personal tags, screenshot gallery,
   statistics, timeline, global achievements dashboard.
