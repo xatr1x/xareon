@@ -12,6 +12,8 @@ pub enum GameStatus {
     #[serde(rename = "completed_100")]
     Completed100,
     Dropped,
+    /// Evergreen games with no ending (MMOs, roguelikes, live-service, sandboxes).
+    Endless,
 }
 
 impl GameStatus {
@@ -24,6 +26,7 @@ impl GameStatus {
             GameStatus::Completed => "completed",
             GameStatus::Completed100 => "completed_100",
             GameStatus::Dropped => "dropped",
+            GameStatus::Endless => "endless",
         }
     }
 
@@ -35,6 +38,7 @@ impl GameStatus {
             "completed" => GameStatus::Completed,
             "completed_100" => GameStatus::Completed100,
             "dropped" => GameStatus::Dropped,
+            "endless" => GameStatus::Endless,
             _ => return None,
         })
     }

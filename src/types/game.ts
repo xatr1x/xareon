@@ -10,6 +10,7 @@ export const GAME_STATUSES = [
   "completed",
   "completed_100",
   "dropped",
+  "endless",
 ] as const;
 
 /** Statuses currently exposed in UI controls. `completed_100` remains a valid backend value. */
@@ -26,6 +27,7 @@ export const STATUS_LABELS: Record<GameStatus, string> = {
   completed: "Completed",
   completed_100: "Completed",
   dropped: "Dropped",
+  endless: "Endless",
 };
 
 export interface Game {

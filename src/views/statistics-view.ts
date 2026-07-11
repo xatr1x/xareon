@@ -31,6 +31,7 @@ const STATUS_SEGMENTS: Array<{ key: string; label: string; color: string }> = [
   { key: "paused", label: "Paused", color: "#e6c84f" },
   { key: "planned", label: "Planned", color: "#8a8f99" },
   { key: "dropped", label: "Dropped", color: "#e06a5c" },
+  { key: "endless", label: "Endless", color: "#a78bff" },
 ];
 
 export function renderStatisticsView(root: HTMLElement): void {

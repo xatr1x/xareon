@@ -158,7 +158,8 @@ xareon/
             ├── 0002_genres_journal.sql  # genres, game_genres, journal_entries
             ├── 0003_settings.sql        # settings key-value store
             ├── 0004_achievements.sql    # user-defined personal achievements
-            └── 0005_play_sessions.sql   # play history + cached totals
+            ├── 0005_play_sessions.sql   # play history + cached totals
+            └── 0006_endless_status.sql  # rebuild games table to add the 'endless' status
 ```
 
 ## 4. Technology stack
@@ -274,7 +275,13 @@ game-specific accomplishment.
 | created_at       | TEXT    | NOT NULL, default `datetime('now')`                        |
 | updated_at       | TEXT    | NOT NULL, default `datetime('now')`; set on update         |
 
-**Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`.
+**Game statuses:** `planned`, `playing`, `paused`, `completed`, `completed_100`, `dropped`,
+`endless`. `endless` marks evergreen games with no ending (MMOs, roguelikes, live-service,
+sandboxes): they never reach `completed`, keep the "so far" open play period, and are
+excluded from the Statistics completed/backlog KPIs while getting their own donut segment.
+Whether a game is currently being played is read from the live session/last-played, not the
+status — so `endless` needs no active/paused variants. Adding a status requires a table
+rebuild migration (SQLite cannot ALTER a CHECK); see `0006_endless_status.sql`.
 **Achievement statuses:** `planned`, `in_progress`, `completed`.
 
 `play_sessions` — immutable manual real-play history. A partial unique index over a

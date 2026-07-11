@@ -316,6 +316,10 @@ body {
   color: #d8b14a;
   border-color: #5a4d22;
 }
+.status-endless {
+  color: #a78bff;
+  border-color: #443a6e;
+}
 
 /* Modal */
 .modal-overlay {
