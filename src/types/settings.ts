@@ -3,4 +3,5 @@
 export interface Settings {
   userIdentifier: string | null;
   googleDriveFolder: string | null;
+  playTrackingShortcut: string | null;
 }

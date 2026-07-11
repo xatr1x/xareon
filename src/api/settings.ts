@@ -9,4 +9,10 @@ export const settingsApi = {
   update(settings: Settings): Promise<Settings> {
     return invoke<Settings>("update_settings", { settings });
   },
+  suspendPlayTrackingShortcut(): Promise<void> {
+    return invoke<void>("suspend_play_tracking_shortcut");
+  },
+  resumePlayTrackingShortcut(): Promise<void> {
+    return invoke<void>("resume_play_tracking_shortcut");
+  },
 };

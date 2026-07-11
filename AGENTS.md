@@ -130,7 +130,9 @@ xareon/
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
         ├── storage/            # file storage (covers, screenshots, backups) — reserved
-        ├── config/            # application configuration — reserved
+        ├── config/
+        │   ├── mod.rs
+        │   └── global_shortcut.rs # macOS/Windows shortcut registration adapter
         ├── events/            # domain events — reserved for future use
         ├── commands/
         │   ├── achievement_commands.rs # achievement #[tauri::command] handlers
@@ -328,6 +330,9 @@ disabled placeholder for a future cross-game dashboard.
   `googleDriveFolder` (URL stored now for the future sync system — the Drive
   integration itself is not implemented). Saving runs inside a transaction so all
   settings commit atomically.
+  `playTrackingShortcut` stores the configurable global Play/Stop accelerator. The
+  Settings UI captures a real key combination in a read-only shortcut input; Backspace
+  disables it. Saving validates and replaces the OS registration before committing.
 
 - **Play tracking** — manual real-play sessions. Commands: `get_active_play_session`,
   `start_play_session`, `heartbeat_play_session`, `stop_play_session`. Only one session
@@ -339,6 +344,10 @@ disabled placeholder for a future cross-game dashboard.
   and hides Play while another game is active. The Dock icon switches to a green
   Play-badged PNG during tracking. On macOS this uses native
   `NSApplication.setApplicationIconImage`; `window.set_icon` does not update the Dock.
+  A configurable global shortcut uses the official Tauri global-shortcut plugin on
+  macOS and Windows: it stops the active session or starts the most recently played game.
+  The handler reuses repository lifecycle operations, updates the runtime icon and emits
+  `play-tracking-changed` so an open UI refreshes and shows a short result toast.
 
 The frontend navigation lists future global modules (Timeline, Achievements,
 Statistics) as disabled placeholders. Per-game achievements are live inside game details;
@@ -389,6 +398,45 @@ there is not yet a global achievements dashboard. Settings is a live nav entry.
   The seed is a rounded macOS-style tile; `icon-playing.png` is the runtime green
   Play-badged state. Runtime decoding uses Tauri's `image-png` feature.
 
+## 9a. Cross-platform requirements
+
+Xareon targets both **macOS and Windows**. macOS is the current primary development
+environment, but Windows is a required supported platform rather than a future optional
+port. Before implementing any feature that touches the operating system, an agent must
+explicitly assess whether its APIs, behavior, assets, permissions, paths, lifecycle, or
+UX differ between macOS and Windows.
+
+The cross-platform rules are mandatory:
+
+- Keep domain logic, services, repositories, database behavior, and frontend contracts
+  platform-independent. Isolate only the smallest necessary system-integration code.
+- Use Rust compile-time branches such as `#[cfg(target_os = "macos")]` and
+  `#[cfg(target_os = "windows")]` when native implementations differ. Do not scatter
+  platform checks through shared business logic.
+- Put OS-specific crates in target-specific Cargo dependency sections. A macOS-only or
+  Windows-only crate must never become an unconditional dependency.
+- Implement behavior for both target operating systems when the feature is expected to
+  work on both. A no-op, ignored call, or generic fallback is not automatically a valid
+  Windows implementation; confirm that it provides the intended user-visible behavior.
+- Check Tauri and native API semantics per platform. Similar names do not imply similar
+  effects—for example, a window icon, macOS Dock icon, and Windows taskbar icon are
+  distinct system concepts.
+- Account for platform differences in filesystem paths, app-data directories, path
+  separators, process and window lifecycle, Dock/taskbar integration, icons and bundle
+  formats, keyboard shortcuts, permissions, notifications, and native dialogs.
+- Prefer Tauri's verified cross-platform API when it provides equivalent behavior. Use
+  native APIs behind a small platform adapter when Tauri does not expose the required
+  semantics on one or both platforms.
+- Validate the current host build and, whenever the toolchain is available, compile-check
+  the other target too. Never claim Windows behavior was tested when only macOS was
+  tested. Record unverified platform behavior clearly in the final handoff and in this
+  file when it is an ongoing limitation.
+- Do not break one platform while fixing the other. Changes to OS integration must
+  preserve a compilable branch for every supported target and a sensible unsupported-OS
+  fallback where applicable.
+- Update this section or the relevant module documentation whenever a new platform-
+  specific integration or limitation is introduced.
+
 ## 10. Known limitations
 
 - Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), manual
@@ -401,11 +449,16 @@ there is not yet a global achievements dashboard. Settings is a live nav entry.
 - The browser query has no pagination yet (fine for a personal library; revisit if needed).
 - No automated tests yet (services are generic over repository traits to allow fakes).
 - Single local database; no backup/restore, sync, or import.
+- The global shortcut compiles and is validated on macOS. The Windows implementation
+  uses the plugin's supported Windows backend but has not yet been compile-checked or
+  exercised because the Windows Rust target is not installed in the current environment.
 
 ## 11. How to add a new feature
 
 Adding a module (e.g. Journal) end-to-end:
 
+0. **Platform assessment:** identify any macOS/Windows differences and decide whether a
+   shared Tauri API or isolated target-specific adapters are required.
 1. **Migration:** add `src-tauri/src/migrations/000X_*.sql` and register it (in order) in
    `db/migrations.rs`. Use foreign keys to `games(id)` where relevant.
 2. **Domain:** add models in `src-tauri/src/domain/` (camelCase serde for wire types).
@@ -448,6 +501,8 @@ Future expansion (from the spec):
 ## 13. Development principles
 
 - Architecture stability is more important than adding new features.
+- Treat macOS and Windows as first-class targets; every OS-facing change requires an
+  explicit cross-platform assessment and platform-appropriate implementation.
 - Every new feature must fit into the existing architecture.
 - Never bypass architectural layers.
 - Never place business logic in the UI or command layer.

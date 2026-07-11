@@ -390,6 +390,27 @@ body {
   max-width: 640px;
 }
 
+.shortcut-input {
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.tracking-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  padding: 10px 14px;
+  border: 1px solid #2f6a3c;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: #64e67d;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+}
+
+.tracking-toast.error { color: var(--danger); border-color: #75413d; }
+
 /* Toolbar / filters */
 .toolbar {
   display: flex;

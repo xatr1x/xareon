@@ -20,11 +20,36 @@ use tauri::Manager;
 use crate::db::manager::DatabaseManager;
 use crate::state::AppState;
 use crate::repositories::play_session_repository::{PlaySessionRepository, SqlitePlaySessionRepository};
+use crate::repositories::settings_repository::SqliteSettingsRepository;
+use crate::services::settings_service::SettingsService;
 
 /// Build and run the Tauri application: resolve the data directory, open the
 /// database (running migrations), register state and commands, then start.
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, _shortcut, event| {
+                use tauri::Emitter;
+                use tauri_plugin_global_shortcut::ShortcutState;
+
+                if event.state() == ShortcutState::Pressed {
+                    if let Err(error) = commands::play_session_commands::toggle_from_global_shortcut(app) {
+                        let changed = commands::play_session_commands::TrackingChanged {
+                            game_id: None,
+                            is_playing: false,
+                            error: Some(error.to_string()),
+                        };
+                        let _ = app.emit("play-tracking-changed", changed);
+                    }
+                }
+            })
+            .build(),
+    );
+
+    builder
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -34,9 +59,14 @@ pub fn run() {
                 SqlitePlaySessionRepository::new(&tx).recover_interrupted()?;
                 tx.commit()?;
             }
+            let shortcut = {
+                let repo = SqliteSettingsRepository::new(&conn);
+                SettingsService::new(&repo).get()?.play_tracking_shortcut
+            };
             app.manage(AppState {
                 db: DatabaseManager::new(conn),
             });
+            crate::config::global_shortcut::replace(app.handle(), None, shortcut.as_deref())?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -75,6 +105,8 @@ pub fn run() {
             commands::journal_commands::delete_journal_entry,
             commands::settings_commands::get_settings,
             commands::settings_commands::update_settings,
+            commands::settings_commands::suspend_play_tracking_shortcut,
+            commands::settings_commands::resume_play_tracking_shortcut,
             commands::play_session_commands::get_active_play_session,
             commands::play_session_commands::start_play_session,
             commands::play_session_commands::heartbeat_play_session,

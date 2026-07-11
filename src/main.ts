@@ -1,4 +1,5 @@
 import "./styles.css";
+import { listen } from "@tauri-apps/api/event";
 import { el } from "./ui/dom";
 import { renderGamesView } from "./views/games-view";
 import { renderSettingsView } from "./views/settings-view";
@@ -39,8 +40,10 @@ function mount(): void {
 
   const content = el("main", { class: "content" });
   const buttons = new Map<string, HTMLButtonElement>();
+  let current: NavItem | undefined;
 
   const select = (item: NavItem): void => {
+    current = item;
     for (const [id, btn] of buttons) btn.classList.toggle("active", id === item.id);
     item.render(content);
   };
@@ -73,6 +76,19 @@ function mount(): void {
 
   const first = NAV.find((n) => n.enabled);
   if (first) select(first);
+
+  const toast = el("div", { class: "tracking-toast hidden" });
+  app.append(toast);
+  void listen<{ gameId: number | null; isPlaying: boolean; error: string | null }>(
+    "play-tracking-changed",
+    ({ payload }) => {
+      if (current) current.render(content);
+      toast.textContent = payload.error ?? (payload.isPlaying ? "Play tracking started" : "Play tracking stopped");
+      toast.classList.remove("hidden", "error");
+      toast.classList.toggle("error", payload.error !== null);
+      window.setTimeout(() => toast.classList.add("hidden"), 3000);
+    },
+  );
 }
 
 mount();

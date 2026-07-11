@@ -1,9 +1,10 @@
-use tauri::{AppHandle, State};
-#[cfg(not(target_os = "macos"))]
-use tauri::Manager;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 use crate::domain::play_session::PlaySession;
 use crate::error::AppResult;
-use crate::repositories::play_session_repository::SqlitePlaySessionRepository;
+use crate::repositories::play_session_repository::{
+    PlaySessionRepository, SqlitePlaySessionRepository,
+};
 use crate::services::play_session_service::PlaySessionService;
 use crate::state::AppState;
 
@@ -15,7 +16,7 @@ fn write<T>(state: &State<'_, AppState>, f: impl FnOnce(&PlaySessionService<'_, 
 }
 
 #[tauri::command] pub fn get_active_play_session(state: State<'_, AppState>) -> AppResult<Option<PlaySession>> { read(&state, |s| s.active()) }
-fn set_playing_icon(app: &AppHandle, playing: bool) {
+pub(crate) fn set_playing_icon(app: &AppHandle, playing: bool) {
     let bytes = if playing {
         include_bytes!("../../icons/icon-playing.png").as_slice()
     } else {
@@ -44,6 +45,42 @@ fn set_playing_icon(app: &AppHandle, playing: bool) {
     ) {
         let _ = window.set_icon(icon);
     }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TrackingChanged {
+    pub game_id: Option<i64>,
+    pub is_playing: bool,
+    pub error: Option<String>,
+}
+
+pub(crate) fn toggle_from_global_shortcut(app: &AppHandle) -> AppResult<TrackingChanged> {
+    let state = app.state::<AppState>();
+    let changed = state.db.with_connection(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let changed = {
+            let sessions = SqlitePlaySessionRepository::new(&tx);
+            if let Some(active) = sessions.active()? {
+                sessions.stop(active.game_id)?;
+                TrackingChanged { game_id: Some(active.game_id), is_playing: false, error: None }
+            } else if let Some(game_id) = sessions.most_recent_game_id()? {
+                sessions.start(game_id)?;
+                TrackingChanged { game_id: Some(game_id), is_playing: true, error: None }
+            } else {
+                TrackingChanged {
+                    game_id: None,
+                    is_playing: false,
+                    error: Some("Open Xareon and start a game once before using the shortcut.".into()),
+                }
+            }
+        };
+        tx.commit()?;
+        Ok(changed)
+    })?;
+    set_playing_icon(app, changed.is_playing);
+    let _ = app.emit("play-tracking-changed", &changed);
+    Ok(changed)
 }
 
 #[tauri::command] pub fn start_play_session(app: AppHandle, state: State<'_, AppState>, game_id: i64) -> AppResult<PlaySession> {

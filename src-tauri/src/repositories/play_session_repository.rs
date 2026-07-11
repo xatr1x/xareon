@@ -9,6 +9,7 @@ pub trait PlaySessionRepository {
     fn heartbeat(&self, game_id: i64) -> AppResult<PlaySession>;
     fn stop(&self, game_id: i64) -> AppResult<()>;
     fn recover_interrupted(&self) -> AppResult<()>;
+    fn most_recent_game_id(&self) -> AppResult<Option<i64>>;
 }
 
 pub struct SqlitePlaySessionRepository<'a> { conn: &'a Connection }
@@ -80,5 +81,12 @@ impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
         }
         self.conn.execute("UPDATE games SET is_playing_now = 0 WHERE is_playing_now = 1 AND id NOT IN (SELECT game_id FROM play_sessions WHERE ended_at IS NULL)", [])?;
         Ok(())
+    }
+
+    fn most_recent_game_id(&self) -> AppResult<Option<i64>> {
+        Ok(self.conn.query_row(
+            "SELECT game_id FROM play_sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC, id DESC LIMIT 1",
+            [], |row| row.get(0),
+        ).optional()?)
     }
 }

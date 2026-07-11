@@ -56,6 +56,7 @@ function form(settings: Settings): HTMLElement {
     settings.googleDriveFolder,
     "Link to your shared Google Drive folder, used later for synchronization.",
   );
+  const playTrackingShortcut = shortcutField(settings.playTrackingShortcut);
 
   const message = el("p", { class: "form-success" });
   const error = el("p", { class: "form-error" });
@@ -76,11 +77,13 @@ function form(settings: Settings): HTMLElement {
         const input: Settings = {
           userIdentifier: text(userIdentifier.input),
           googleDriveFolder: text(googleDriveFolder.input),
+          playTrackingShortcut: playTrackingShortcut.value(),
         };
         try {
           const saved = await settingsApi.update(input);
           userIdentifier.input.value = saved.userIdentifier ?? "";
           googleDriveFolder.input.value = saved.googleDriveFolder ?? "";
+          playTrackingShortcut.set(saved.playTrackingShortcut);
           message.textContent = "Settings saved.";
         } catch (e) {
           error.textContent = String(e);
@@ -89,7 +92,11 @@ function form(settings: Settings): HTMLElement {
     },
     [
       el("div", { class: "view-header" }, [el("h1", {}, ["Settings"])]),
-      el("div", { class: "form-grid" }, [userIdentifier.row, googleDriveFolder.row]),
+      el("div", { class: "form-grid" }, [
+        userIdentifier.row,
+        googleDriveFolder.row,
+        playTrackingShortcut.row,
+      ]),
       error,
       message,
       el("div", { class: "modal-actions" }, [
@@ -97,4 +104,115 @@ function form(settings: Settings): HTMLElement {
       ]),
     ],
   );
+}
+
+function shortcutField(initial: string | null): {
+  row: HTMLElement;
+  value: () => string | null;
+  set: (value: string | null) => void;
+} {
+  let shortcut = initial;
+  let suspended = false;
+  const input = el("input", {
+    type: "text",
+    readOnly: true,
+    class: "shortcut-input",
+    placeholder: "Click and press a shortcut",
+  });
+
+  const render = (): void => {
+    input.value = shortcut ? displayShortcut(shortcut) : "";
+  };
+  const resume = async (): Promise<void> => {
+    if (!suspended) return;
+    suspended = false;
+    await settingsApi.resumePlayTrackingShortcut();
+  };
+
+  input.addEventListener("focus", async () => {
+    input.value = "Press shortcut…";
+    try {
+      await settingsApi.suspendPlayTrackingShortcut();
+      suspended = true;
+    } catch {
+      render();
+    }
+  });
+  input.addEventListener("blur", () => {
+    render();
+    void resume();
+  });
+  input.addEventListener("keydown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      input.blur();
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      shortcut = null;
+      render();
+      input.blur();
+      return;
+    }
+    const captured = captureShortcut(event);
+    if (!captured) return;
+    shortcut = captured;
+    render();
+    input.blur();
+  });
+  render();
+
+  return {
+    row: el("label", { class: "field field-wide" }, [
+      el("span", {}, ["Play/Stop global shortcut"]),
+      input,
+      el("span", { class: "field-hint" }, [
+        "Works while Xareon is in the background. Stops the active session, or starts the most recently played game. Press Backspace to disable.",
+      ]),
+    ]),
+    value: () => shortcut,
+    set: (value) => {
+      shortcut = value;
+      render();
+    },
+  };
+}
+
+function captureShortcut(event: KeyboardEvent): string | null {
+  if (["Meta", "Control", "Alt", "Shift"].includes(event.key)) return null;
+  if (!event.metaKey && !event.ctrlKey && !event.altKey) return null;
+
+  const modifiers: string[] = [];
+  if (event.metaKey) modifiers.push("Command");
+  if (event.ctrlKey) modifiers.push("Control");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+
+  const named: Record<string, string> = {
+    " ": "Space",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Enter: "Enter",
+    Tab: "Tab",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+  };
+  const key = named[event.key] ?? (event.key.length === 1 ? event.key.toUpperCase() : event.key);
+  return [...modifiers, key].join("+");
+}
+
+function displayShortcut(value: string): string {
+  return value
+    .replace("CmdOrCtrl", navigator.platform.includes("Mac") ? "⌘" : "Ctrl")
+    .replace("Command", "⌘")
+    .replace("Control", "Ctrl")
+    .replace("Alt", navigator.platform.includes("Mac") ? "⌥" : "Alt")
+    .replace("Shift", "⇧")
+    .split("+")
+    .join(" + ");
 }

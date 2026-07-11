@@ -17,4 +17,6 @@ pub struct Settings {
     /// URL of the user's shared Google Drive folder. Stored now for the future
     /// synchronization system; the integration itself is out of scope here.
     pub google_drive_folder: Option<String>,
+    /// Global Play/Stop toggle accelerator. `None` disables the shortcut.
+    pub play_tracking_shortcut: Option<String>,
 }
