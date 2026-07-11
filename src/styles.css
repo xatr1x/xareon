@@ -244,12 +244,6 @@ body {
   color: var(--text-muted);
 }
 
-.data-table .actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
 /* Status badge */
 .badge {
   display: inline-block;

@@ -1,6 +1,5 @@
 import { gamesApi } from "../api/games";
 import { clear, el } from "../ui/dom";
-import { confirmDialog } from "../ui/confirm";
 import {
   formatCalendarPlayPeriod,
   formatRelativeTime,
@@ -109,7 +108,7 @@ export function renderGamesView(root: HTMLElement): void {
     try {
       const games = await gamesApi.list(buildQuery());
       clear(results);
-      results.append(games.length === 0 ? emptyState() : gamesTable(games, root, reload));
+      results.append(games.length === 0 ? emptyState() : gamesTable(games, root));
     } catch (e) {
       clear(results);
       results.append(el("p", { class: "form-error" }, [`Failed to load games: ${String(e)}`]));
@@ -357,7 +356,7 @@ function trackingCell(game: Game): HTMLElement {
   return el("div", { class: "tracking-cell" }, content);
 }
 
-function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void>): HTMLElement {
+function gamesTable(games: Game[], root: HTMLElement): HTMLElement {
   const rows = games.map((game) =>
     el("tr", {}, [
       el("td", {}, [
@@ -373,37 +372,6 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
       el("td", {}, [trackingCell(game)]),
       el("td", {}, [el("span", { class: `badge status-${game.status}` }, [STATUS_LABELS[game.status]])]),
       el("td", { class: "num" }, [game.rating === null ? "—" : `${game.rating}/10`]),
-      el("td", { class: "actions" }, [
-        el(
-          "button",
-          {
-            class: "btn btn-sm",
-            onclick: () =>
-              openGameForm({
-                game,
-                onSubmit: async (i) => void (await gamesApi.update(game.id, i), await reload()),
-              }),
-          },
-          ["Edit"],
-        ),
-        el(
-          "button",
-          {
-            class: "btn btn-sm btn-danger",
-            onclick: async () => {
-              const ok = await confirmDialog(
-                `Delete "${game.title}"? This also deletes its journal.`,
-                { danger: true, confirmLabel: "Delete" },
-              );
-              if (ok) {
-                await gamesApi.delete(game.id);
-                await reload();
-              }
-            },
-          },
-          ["Delete"],
-        ),
-      ]),
     ]),
   );
 
@@ -416,7 +384,6 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
         el("th", {}, ["Play time"]),
         el("th", {}, ["Status"]),
         el("th", { class: "num" }, ["Rating"]),
-        el("th", {}, [""]),
       ]),
     ]),
     el("tbody", {}, rows),

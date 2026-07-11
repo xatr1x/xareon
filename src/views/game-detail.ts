@@ -21,6 +21,7 @@ import {
 } from "../types/achievement";
 import { STATUS_LABELS, type Game } from "../types/game";
 import type { JournalEntry } from "../types/journal";
+import { openGameForm } from "./game-form";
 
 type AchievementFormInput = Omit<NewAchievement, "displayOrder"> & { displayOrder: number };
 type DetailTab = "overview" | "achievements" | "journal" | "details";
@@ -97,8 +98,42 @@ function header(
       el("h1", {}, [game.title]),
       ...(game.isPlayingNow ? [el("span", { class: "playing-indicator", title: "Playing now" })] : []),
     ]),
-    el("div", { class: "play-controls" }, controls),
+    el("div", { class: "play-controls" }, [...controls, ...headerActions(game, onBack, reload)]),
   ]);
+}
+
+function headerActions(game: Game, onBack: () => void, reload: () => Promise<void>): HTMLElement[] {
+  return [
+    el(
+      "button",
+      {
+        class: "btn btn-sm",
+        onclick: () =>
+          openGameForm({
+            game,
+            onSubmit: async (input) => void (await gamesApi.update(game.id, input), await reload()),
+          }),
+      },
+      ["Edit"],
+    ),
+    el(
+      "button",
+      {
+        class: "btn btn-sm btn-danger",
+        onclick: async () => {
+          const ok = await confirmDialog(`Delete "${game.title}"? This also deletes its journal.`, {
+            danger: true,
+            confirmLabel: "Delete",
+          });
+          if (ok) {
+            await gamesApi.delete(game.id);
+            onBack();
+          }
+        },
+      },
+      ["Delete"],
+    ),
+  ];
 }
 
 function playControl(game: Game, reload: () => Promise<void>): HTMLElement {
