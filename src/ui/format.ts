@@ -106,6 +106,42 @@ export function formatTrackedDuration(seconds: number): string {
   return remaining === 0 ? `${hours}h` : `${hours}h ${remaining}m`;
 }
 
+/** Play-time total for summary widgets: an explicit `0m` at zero, else compact. */
+export function formatPlayTotal(seconds: number): string {
+  return seconds <= 0 ? "0m" : formatTrackedDuration(seconds);
+}
+
+/** Local midnight at the start of `reference`'s day. */
+export function startOfLocalDay(reference = new Date()): Date {
+  const day = new Date(reference);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+/** Local Monday 00:00 at the start of `reference`'s week. */
+export function startOfLocalWeek(reference = new Date()): Date {
+  const day = startOfLocalDay(reference);
+  const daysSinceMonday = (day.getDay() + 6) % 7;
+  day.setDate(day.getDate() - daysSinceMonday);
+  return day;
+}
+
+/** Seconds of an in-progress session that fall on or after `from`. */
+function elapsedSince(startedAt: string, from: Date, now: number): number {
+  const start = parseBackendDateTime(startedAt).getTime();
+  return Math.max(0, Math.floor((now - Math.max(start, from.getTime())) / 1000));
+}
+
+/** Live seconds an active session has contributed to the current local day. */
+export function activeSecondsToday(startedAt: string, now = Date.now()): number {
+  return elapsedSince(startedAt, startOfLocalDay(new Date(now)), now);
+}
+
+/** Live seconds an active session has contributed to the current local week. */
+export function activeSecondsThisWeek(startedAt: string, now = Date.now()): number {
+  return elapsedSince(startedAt, startOfLocalWeek(new Date(now)), now);
+}
+
 export function formatSessionTimer(startedAt: string): string {
   const elapsed = Math.max(0, Math.floor((Date.now() - parseBackendDateTime(startedAt).getTime()) / 1000));
   const hours = Math.floor(elapsed / 3600);

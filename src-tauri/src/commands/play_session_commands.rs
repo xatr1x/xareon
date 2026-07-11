@@ -1,6 +1,6 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use crate::domain::play_session::PlaySession;
+use crate::domain::play_session::{PlaySession, PlayTimeTotals};
 use crate::error::AppResult;
 use crate::repositories::play_session_repository::{
     PlaySessionRepository, SqlitePlaySessionRepository,
@@ -16,6 +16,8 @@ fn write<T>(state: &State<'_, AppState>, f: impl FnOnce(&PlaySessionService<'_, 
 }
 
 #[tauri::command] pub fn get_active_play_session(state: State<'_, AppState>) -> AppResult<Option<PlaySession>> { read(&state, |s| s.active()) }
+#[tauri::command] pub fn get_play_time_totals(state: State<'_, AppState>) -> AppResult<PlayTimeTotals> { read(&state, |s| s.totals()) }
+#[tauri::command] pub fn get_game_play_time_today(state: State<'_, AppState>, game_id: i64) -> AppResult<i64> { read(&state, |s| s.game_today(game_id)) }
 pub(crate) fn set_playing_icon(app: &AppHandle, playing: bool) {
     let bytes = if playing {
         include_bytes!("../../icons/icon-playing.png").as_slice()

@@ -1,11 +1,16 @@
 import { gamesApi } from "../api/games";
+import { playSessionsApi } from "../api/play-sessions";
 import { clear, el } from "../ui/dom";
 import {
+  activeSecondsThisWeek,
+  activeSecondsToday,
   formatCalendarPlayPeriod,
+  formatPlayTotal,
   formatRelativeTime,
   formatSessionTimer,
   formatTrackedDuration,
 } from "../ui/format";
+import type { PlayTimeTotals } from "../types/play-session";
 import {
   GAME_SORTS,
   VISIBLE_GAME_STATUSES,
@@ -102,9 +107,24 @@ function buildQuery(): GameQuery {
 
 export function renderGamesView(root: HTMLElement): void {
   const results = el("div", { class: "view-body" });
+  const summary = el("div", { class: "play-summary" });
+
+  const refreshSummary = async (): Promise<void> => {
+    try {
+      const [totals, active] = await Promise.all([
+        playSessionsApi.totals(),
+        playSessionsApi.active(),
+      ]);
+      renderPlaySummary(summary, totals, active?.startedAt ?? null);
+    } catch {
+      // Leave the last rendered summary in place on a transient failure.
+    }
+  };
+
   const reload = async (): Promise<void> => {
     clear(results);
     results.append(el("p", { class: "muted" }, ["Loading…"]));
+    void refreshSummary();
     try {
       const games = await gamesApi.list(buildQuery());
       clear(results);
@@ -116,25 +136,66 @@ export function renderGamesView(root: HTMLElement): void {
   };
 
   clear(root);
-  root.append(buildHeader(reload), buildToolbar(reload), results);
+  root.append(buildHeader(reload, summary), buildToolbar(reload), results);
   void reload();
 }
 
-function buildHeader(reload: () => Promise<void>): HTMLElement {
+function buildHeader(reload: () => Promise<void>, summary: HTMLElement): HTMLElement {
   return el("div", { class: "view-header" }, [
     el("h1", {}, ["Games"]),
-    el(
-      "button",
-      {
-        class: "btn btn-primary",
-        onclick: () =>
-          openGameForm({
-            game: null,
-            onSubmit: async (i) => void (await gamesApi.create(i), await reload()),
-          }),
-      },
-      ["+ Add game"],
-    ),
+    el("div", { class: "view-header-actions" }, [
+      summary,
+      el(
+        "button",
+        {
+          class: "btn btn-primary",
+          onclick: () =>
+            openGameForm({
+              game: null,
+              onSubmit: async (i) => void (await gamesApi.create(i), await reload()),
+            }),
+        },
+        ["+ Add game"],
+      ),
+    ]),
+  ]);
+}
+
+/** Compact "played today / this week" pill, live while a session is active. */
+function renderPlaySummary(
+  container: HTMLElement,
+  totals: PlayTimeTotals,
+  activeStartedAt: string | null,
+): void {
+  clear(container);
+  container.classList.toggle("is-live", activeStartedAt !== null);
+  container.append(
+    summaryStat("Today", totals.todaySeconds, activeStartedAt, activeSecondsToday),
+    summaryStat("This week", totals.weekSeconds, activeStartedAt, activeSecondsThisWeek),
+  );
+}
+
+function summaryStat(
+  label: string,
+  baseSeconds: number,
+  activeStartedAt: string | null,
+  liveSeconds: (startedAt: string) => number,
+): HTMLElement {
+  const value = el("span", { class: "play-summary-value" });
+  const render = (): void => {
+    const live = activeStartedAt ? liveSeconds(activeStartedAt) : 0;
+    value.textContent = formatPlayTotal(baseSeconds + live);
+  };
+  render();
+  if (activeStartedAt) {
+    const interval = window.setInterval(() => {
+      if (!value.isConnected) window.clearInterval(interval);
+      else render();
+    }, 1000);
+  }
+  return el("div", { class: "play-summary-stat" }, [
+    el("span", { class: "play-summary-label" }, [label]),
+    value,
   ]);
 }
 

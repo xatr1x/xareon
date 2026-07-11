@@ -5,9 +5,11 @@ import { playSessionsApi } from "../api/play-sessions";
 import { clear, el } from "../ui/dom";
 import { confirmDialog } from "../ui/confirm";
 import {
+  activeSecondsToday,
   formatDate,
   formatDateTime,
   formatCalendarPlayPeriod,
+  formatPlayTotal,
   formatRelativeTime,
   formatSessionTimer,
   formatTrackedDuration,
@@ -50,17 +52,18 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
     clear(container);
     container.append(el("p", { class: "muted" }, ["Loading…"]));
     try {
-      const [game, achievements, entries, activeSession] = await Promise.all([
+      const [game, achievements, entries, activeSession, todaySeconds] = await Promise.all([
         gamesApi.get(gameId),
         achievementsApi.listForGame(gameId),
         journalApi.listForGame(gameId),
         playSessionsApi.active(),
+        playSessionsApi.gameTodaySeconds(gameId),
       ]);
       clear(container);
       const tabContent = el("div", { class: "detail-tab-content" });
       const renderActiveTab = (): void => {
         clear(tabContent);
-        tabContent.append(activeTabContent(activeTab, game, achievements, entries, load));
+        tabContent.append(activeTabContent(activeTab, game, achievements, entries, todaySeconds, load));
       };
       container.append(
         header(game, activeSession?.gameId ?? null, onBack, load),
@@ -189,6 +192,7 @@ function activeTabContent(
   game: Game,
   achievements: Achievement[],
   entries: JournalEntry[],
+  todaySeconds: number,
   reload: () => Promise<void>,
 ): HTMLElement {
   switch (activeTab) {
@@ -199,11 +203,16 @@ function activeTabContent(
     case "details":
       return detailsSection(game);
     case "overview":
-      return overviewSection(game, achievements, entries);
+      return overviewSection(game, achievements, entries, todaySeconds);
   }
 }
 
-function overviewSection(game: Game, achievements: Achievement[], entries: JournalEntry[]): HTMLElement {
+function overviewSection(
+  game: Game,
+  achievements: Achievement[],
+  entries: JournalEntry[],
+  todaySeconds: number,
+): HTMLElement {
   const completed = achievements.filter((achievement) => achievement.status === "completed").length;
   const achievementSummary =
     achievements.length === 0 ? "No achievements" : `${completed}/${achievements.length} completed`;
@@ -213,6 +222,7 @@ function overviewSection(game: Game, achievements: Achievement[], entries: Journ
     el("div", { class: "overview-grid" }, [
       overviewCard("Status", STATUS_LABELS[game.status]),
       overviewCard("Play period", formatCalendarPlayPeriod(game.startedAt, game.finishedAt)),
+      playedTodayCard(todaySeconds, game.isPlayingNow ? game.activeSessionStartedAt : null),
       overviewCard("Total play time", trackedPlayTime(game)),
       ...(game.isPlayingNow && game.activeSessionStartedAt
         ? [liveSessionCard(game.activeSessionStartedAt)]
@@ -279,6 +289,26 @@ function overviewCard(label: string, value: string): HTMLElement {
   return el("div", { class: "overview-card" }, [
     el("span", { class: "muted" }, [label]),
     el("strong", {}, [value]),
+  ]);
+}
+
+/** "Played today" for this game: completed seconds, plus a live tick while active. */
+function playedTodayCard(baseSeconds: number, activeStartedAt: string | null): HTMLElement {
+  const value = el("strong", { class: activeStartedAt ? "session-timer" : "" });
+  const render = (): void => {
+    const live = activeStartedAt ? activeSecondsToday(activeStartedAt) : 0;
+    value.textContent = formatPlayTotal(baseSeconds + live);
+  };
+  render();
+  if (activeStartedAt) {
+    const interval = window.setInterval(() => {
+      if (!value.isConnected) window.clearInterval(interval);
+      else render();
+    }, 1000);
+  }
+  return el("div", { class: "overview-card" }, [
+    el("span", { class: "muted" }, ["Played today"]),
+    value,
   ]);
 }
 

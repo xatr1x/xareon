@@ -1,7 +1,11 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::domain::play_session::{ActivePlaySummary, PlaySession};
+use crate::domain::play_session::{ActivePlaySummary, PlaySession, PlayTimeTotals};
 use crate::error::{AppError, AppResult};
+
+/// Start of the current week (Monday 00:00) as a local calendar date, for use in
+/// `date(..., 'localtime') >= ?` comparisons.
+const WEEK_START_LOCAL: &str = "date('now', 'localtime', 'weekday 0', '-6 days')";
 
 pub trait PlaySessionRepository {
     fn active(&self) -> AppResult<Option<PlaySession>>;
@@ -11,6 +15,10 @@ pub trait PlaySessionRepository {
     fn recover_interrupted(&self) -> AppResult<()>;
     fn most_recent_game_id(&self) -> AppResult<Option<i64>>;
     fn active_summary(&self) -> AppResult<Option<ActivePlaySummary>>;
+    /// Play time from completed sessions across today and the current week.
+    fn play_time_totals(&self) -> AppResult<PlayTimeTotals>;
+    /// Play time from completed sessions of one game that ended today.
+    fn game_seconds_today(&self, game_id: i64) -> AppResult<i64>;
 }
 
 pub struct SqlitePlaySessionRepository<'a> { conn: &'a Connection }
@@ -101,5 +109,31 @@ impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
                 elapsed_seconds: row.get(1)?,
             }),
         ).optional()?)
+    }
+
+    fn play_time_totals(&self) -> AppResult<PlayTimeTotals> {
+        // A single scan over this week's completed sessions; today is a subset of
+        // the week, so both totals come from the same narrow row set.
+        let sql = format!(
+            "SELECT \
+               COALESCE(SUM(CASE WHEN date(ended_at, 'localtime') = date('now', 'localtime') \
+                 THEN duration_seconds ELSE 0 END), 0), \
+               COALESCE(SUM(duration_seconds), 0) \
+             FROM play_sessions \
+             WHERE ended_at IS NOT NULL AND date(ended_at, 'localtime') >= {WEEK_START_LOCAL}"
+        );
+        Ok(self.conn.query_row(&sql, [], |row| {
+            Ok(PlayTimeTotals { today_seconds: row.get(0)?, week_seconds: row.get(1)? })
+        })?)
+    }
+
+    fn game_seconds_today(&self, game_id: i64) -> AppResult<i64> {
+        Ok(self.conn.query_row(
+            "SELECT COALESCE(SUM(duration_seconds), 0) FROM play_sessions \
+             WHERE game_id = ?1 AND ended_at IS NOT NULL \
+               AND date(ended_at, 'localtime') = date('now', 'localtime')",
+            [game_id],
+            |row| row.get(0),
+        )?)
     }
 }

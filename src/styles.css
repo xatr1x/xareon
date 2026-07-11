@@ -112,6 +112,52 @@ body {
   margin: 0;
 }
 
+.view-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* "Played today / this week" summary pill in the Games header. */
+.play-summary {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.play-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 16px;
+}
+
+.play-summary-stat + .play-summary-stat {
+  border-left: 1px solid var(--border);
+}
+
+.play-summary-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.play-summary-value {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-summary.is-live .play-summary-value {
+  color: #64e67d;
+}
+
 .detail-title,
 .play-controls {
   display: flex;

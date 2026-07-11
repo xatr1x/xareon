@@ -77,7 +77,7 @@ xareon/
 │   │   ├── achievements.ts     # wrappers over achievement commands
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
-│   │   ├── play-sessions.ts    # wrappers over manual play tracking
+│   │   ├── play-sessions.ts    # manual play tracking + today/week play-time totals
 │   │   └── settings.ts         # wrappers over get_settings/update_settings
 │   ├── types/
 │   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
@@ -90,9 +90,9 @@ xareon/
 │   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
 │   │   └── format.ts           # date/time formatting
 │   └── views/
-│       ├── games-view.ts       # game browser: filters, sort, table
+│       ├── games-view.ts       # game browser: filters, sort, table + today/week play summary
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
-│       ├── game-detail.ts      # tabbed game detail (overview/achievements/journal/details)
+│       ├── game-detail.ts      # tabbed game detail (overview/achievements/journal/details) + Edit/Delete
 │       └── settings-view.ts    # settings page (load + save)
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
@@ -118,7 +118,7 @@ xareon/
         │   ├── game_repository.rs     # games table + browser query + genre hydration
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
-        │   ├── play_session_repository.rs # sessions + cached game totals
+        │   ├── play_session_repository.rs # sessions + cached game totals + today/week aggregates
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
         │   ├── achievement_service.rs # validation + progress/status rules
@@ -140,7 +140,7 @@ xareon/
         │   ├── game_commands.rs     # game #[tauri::command] handlers (writes in a tx)
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
-        │   ├── play_session_commands.rs # Play/Stop/heartbeat + Dock icon
+        │   ├── play_session_commands.rs # Play/Stop/heartbeat + play-time totals + Dock icon
         │   └── settings_commands.rs # get_settings, update_settings (write in a tx)
         ├── db/
         │   ├── connection.rs   # open() + enable FKs + run migrations
@@ -286,6 +286,11 @@ constant guarantees at most one unfinished session in the entire database.
 
 - **Games** — full CRUD plus a flexible browser query. Commands: `list_games` (takes an
   optional `GameQuery`), `get_game`, `create_game`, `update_game`, `delete_game`.
+  - The browser table has **no per-row Edit/Delete actions**. Editing and deleting a game
+    live on the game detail page header (Edit opens the shared game form; Delete goes
+    through `confirmDialog` and navigates back on success). The list is a pure read view.
+  - The Games header shows a compact **today / this week** play-time summary next to the
+    Add game button (see Play tracking below).
   - The browser omits platform as a dedicated column; platform remains available in the
     game form, detail view, and advanced browser filter. Its place is used by the
     separate Play period and Play time measures described below.
@@ -346,13 +351,27 @@ disabled placeholder for a future cross-game dashboard.
   disables it. Saving validates and replaces the OS registration before committing.
 
 - **Play tracking** — manual real-play sessions. Commands: `get_active_play_session`,
-  `start_play_session`, `heartbeat_play_session`, `stop_play_session`. Only one session
+  `get_play_time_totals`, `get_game_play_time_today`, `start_play_session`,
+  `heartbeat_play_session`, `stop_play_session`. Only one session
   can be active globally. Play/Stop atomically update the session and cached game fields,
   so reads never sum all history. Startup closes an interrupted session at its last
   minute heartbeat; normal window close stops it at the current time. The browser and
   game detail show total time, Steam-like relative last-played time for games with status `playing`, a live
   `HH:MM:SS` timer and a subtle green indicator. Game detail has one Play/Stop control
-  and hides Play while another game is active. The Dock icon switches to a green
+  and hides Play while another game is active.
+  - **Today / this-week play-time** is split between backend and frontend so reads stay
+    cheap and the display stays live. `get_play_time_totals` returns a `PlayTimeTotals`
+    (`todaySeconds`, `weekSeconds`) summed from **completed** sessions, attributed to the
+    **local** day/week they ended on (SQLite `date(..., 'localtime')`; week starts Monday
+    via `weekday 0, -6 days`). `get_game_play_time_today` is the same for one game, today.
+    These are simple indexed `SUM`s over a slowly-growing table — cheap, computed
+    on-demand at view load, never on a timer. The frontend adds the **live** contribution
+    of any active session (elapsed clamped to the local day/week start) on top of the
+    backend snapshot and ticks it every second; on Stop a reload folds the finished
+    session into the completed total, so there is no double counting. Helpers live in
+    `ui/format.ts` (`activeSecondsToday`, `activeSecondsThisWeek`, `startOfLocalWeek`,
+    `formatPlayTotal`). The Games header renders the global today/week pill; the game
+    detail Overview grid shows a "Played today" card for that game. The Dock icon switches to a green
   Play-badged PNG during tracking. On macOS this uses native
   `NSApplication.setApplicationIconImage`; `window.set_icon` does not update the Dock.
   A configurable global shortcut uses the official Tauri global-shortcut plugin on

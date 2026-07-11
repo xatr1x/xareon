@@ -6,3 +6,9 @@ export interface PlaySession {
   lastActivityAt: string;
   durationSeconds: number | null;
 }
+
+/** Completed-session play time over recent calendar windows, from the backend. */
+export interface PlayTimeTotals {
+  todaySeconds: number;
+  weekSeconds: number;
+}
