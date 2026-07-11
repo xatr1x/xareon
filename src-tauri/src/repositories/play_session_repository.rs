@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::domain::play_session::PlaySession;
+use crate::domain::play_session::{ActivePlaySummary, PlaySession};
 use crate::error::{AppError, AppResult};
 
 pub trait PlaySessionRepository {
@@ -10,6 +10,7 @@ pub trait PlaySessionRepository {
     fn stop(&self, game_id: i64) -> AppResult<()>;
     fn recover_interrupted(&self) -> AppResult<()>;
     fn most_recent_game_id(&self) -> AppResult<Option<i64>>;
+    fn active_summary(&self) -> AppResult<Option<ActivePlaySummary>>;
 }
 
 pub struct SqlitePlaySessionRepository<'a> { conn: &'a Connection }
@@ -87,6 +88,18 @@ impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
         Ok(self.conn.query_row(
             "SELECT game_id FROM play_sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC, id DESC LIMIT 1",
             [], |row| row.get(0),
+        ).optional()?)
+    }
+
+    fn active_summary(&self) -> AppResult<Option<ActivePlaySummary>> {
+        Ok(self.conn.query_row(
+            "SELECT g.title, MAX(0, CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', ps.started_at) AS INTEGER)) \
+             FROM play_sessions ps JOIN games g ON g.id = ps.game_id WHERE ps.ended_at IS NULL",
+            [],
+            |row| Ok(ActivePlaySummary {
+                game_title: row.get(0)?,
+                elapsed_seconds: row.get(1)?,
+            }),
         ).optional()?)
     }
 }

@@ -3,3 +3,4 @@
 //! Reserved for future use (e.g. theme, language, backup preferences). No
 //! implementation yet.
 pub mod global_shortcut;
+pub mod session_indicator;

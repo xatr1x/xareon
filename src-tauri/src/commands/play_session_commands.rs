@@ -79,6 +79,7 @@ pub(crate) fn toggle_from_global_shortcut(app: &AppHandle) -> AppResult<Tracking
         Ok(changed)
     })?;
     set_playing_icon(app, changed.is_playing);
+    crate::config::session_indicator::refresh(app);
     let _ = app.emit("play-tracking-changed", &changed);
     Ok(changed)
 }
@@ -86,11 +87,13 @@ pub(crate) fn toggle_from_global_shortcut(app: &AppHandle) -> AppResult<Tracking
 #[tauri::command] pub fn start_play_session(app: AppHandle, state: State<'_, AppState>, game_id: i64) -> AppResult<PlaySession> {
     let session = write(&state, |s| s.start(game_id))?;
     set_playing_icon(&app, true);
+    crate::config::session_indicator::refresh(&app);
     Ok(session)
 }
 #[tauri::command] pub fn heartbeat_play_session(state: State<'_, AppState>, game_id: i64) -> AppResult<PlaySession> { write(&state, |s| s.heartbeat(game_id)) }
 #[tauri::command] pub fn stop_play_session(app: AppHandle, state: State<'_, AppState>, game_id: i64) -> AppResult<()> {
     write(&state, |s| s.stop(game_id))?;
     set_playing_icon(&app, false);
+    crate::config::session_indicator::refresh(&app);
     Ok(())
 }

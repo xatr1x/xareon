@@ -132,7 +132,8 @@ xareon/
         ├── storage/            # file storage (covers, screenshots, backups) — reserved
         ├── config/
         │   ├── mod.rs
-        │   └── global_shortcut.rs # macOS/Windows shortcut registration adapter
+        │   ├── global_shortcut.rs # macOS/Windows shortcut registration adapter
+        │   └── session_indicator.rs # active-session menu bar/system tray lifecycle
         ├── events/            # domain events — reserved for future use
         ├── commands/
         │   ├── achievement_commands.rs # achievement #[tauri::command] handlers
@@ -348,6 +349,13 @@ disabled placeholder for a future cross-game dashboard.
   macOS and Windows: it stops the active session or starts the most recently played game.
   The handler reuses repository lifecycle operations, updates the runtime icon and emits
   `play-tracking-changed` so an open UI refreshes and shows a short result toast.
+  While a session is active, `session_indicator` shows a green Play icon in the macOS
+  menu bar or Windows system tray. It is fully hidden without an active session. On
+  macOS its title displays elapsed time without seconds (`2h 14m`); Windows does not
+  support persistent tray title text, so the duration and game title are exposed through
+  the tray tooltip. Clicking the indicator focuses the main Xareon window. A backend
+  minute worker owns both heartbeat updates and indicator refreshes, so crash recovery
+  remains accurate even when game detail is not open or the window is in the background.
 
 The frontend navigation lists future global modules (Timeline, Achievements,
 Statistics) as disabled placeholders. Per-game achievements are live inside game details;
@@ -452,6 +460,9 @@ The cross-platform rules are mandatory:
 - The global shortcut compiles and is validated on macOS. The Windows implementation
   uses the plugin's supported Windows backend but has not yet been compile-checked or
   exercised because the Windows Rust target is not installed in the current environment.
+- The Windows system tray cannot show a persistent text title beside its icon; current
+  session duration is therefore available in its tooltip. This behavior is implemented
+  through Tauri's cross-platform tray API but is not yet exercised on Windows hardware.
 
 ## 11. How to add a new feature
 

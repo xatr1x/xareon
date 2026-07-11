@@ -66,6 +66,7 @@ pub fn run() {
             app.manage(AppState {
                 db: DatabaseManager::new(conn),
             });
+            crate::config::session_indicator::setup(app.handle())?;
             crate::config::global_shortcut::replace(app.handle(), None, shortcut.as_deref())?;
             Ok(())
         })

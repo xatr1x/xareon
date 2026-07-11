@@ -10,3 +10,8 @@ pub struct PlaySession {
     pub last_activity_at: String,
     pub duration_seconds: Option<i64>,
 }
+
+pub struct ActivePlaySummary {
+    pub game_title: String,
+    pub elapsed_seconds: i64,
+}

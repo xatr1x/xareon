@@ -117,12 +117,6 @@ function playControl(game: Game, reload: () => Promise<void>): HTMLElement {
     },
   }, [game.isPlayingNow ? "■ Stop" : "▶ Play"]);
 
-  if (game.isPlayingNow) {
-    const heartbeat = window.setInterval(() => {
-      if (!button.isConnected) window.clearInterval(heartbeat);
-      else void playSessionsApi.heartbeat(game.id);
-    }, 60_000);
-  }
   return el("div", { class: "play-control" }, [button, errorMessage]);
 }
 
