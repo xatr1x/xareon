@@ -49,7 +49,10 @@ function mount(): void {
     "nav",
     { class: "sidebar" },
     [
-      el("div", { class: "brand" }, ["Xareon"]),
+      el("div", { class: "brand" }, [
+        el("img", { class: "brand-icon", src: "/xareon-icon.png", alt: "" }),
+        el("span", {}, ["Xareon"]),
+      ]),
       ...NAV.map((item) => {
         const btn = el(
           "button",

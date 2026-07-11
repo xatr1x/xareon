@@ -64,6 +64,8 @@ main.ts (shell/nav)  →  views/*  →  api/*  →  Tauri invoke
 xareon/
 ├── index.html                  # Vite entry
 ├── package.json                # frontend deps + scripts
+├── public/
+│   └── xareon-icon.png         # frontend copy of the app icon, used in the sidebar brand
 ├── tsconfig.json               # strict TypeScript config
 ├── vite.config.ts              # Vite/Tauri dev server config
 ├── AGENTS.md                   # this file
@@ -346,8 +348,11 @@ there is not yet a global achievements dashboard. Settings is a live nav entry.
 - **`bundled` SQLite.** No system SQLite dependency; reproducible builds.
 - **Hand-rolled migration runner.** `user_version`-based, zero extra dependencies, easy to
   reason about. Append-only — never edit an applied migration.
-- **Icons** are generated from a seed image via `npm run tauri icon` and committed under
-  `src-tauri/icons/`. Replace the seed and regenerate to rebrand.
+- **Icons** are generated from the white-and-blue stylized X seed at
+  `src-tauri/icons/icon-source.png` via `npm run tauri -- icon src-tauri/icons/icon-source.png`.
+  The generated platform formats are committed under `src-tauri/icons/`; replace the seed
+  and rerun that command to rebrand. Copy the generated `128x128.png` to
+  `public/xareon-icon.png` so the sidebar brand uses the same icon at runtime.
 
 ## 10. Known limitations
 
