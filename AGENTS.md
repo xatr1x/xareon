@@ -259,6 +259,10 @@ game-specific accomplishment.
 
 - **Games** — full CRUD plus a flexible browser query. Commands: `list_games` (takes an
   optional `GameQuery`), `get_game`, `create_game`, `update_game`, `delete_game`.
+  - The browser table shows a compact **Time** column instead of platform: completed
+    date ranges render as a calendar duration (for example, `1 mo, 3 d`), while playing
+    games show time since their start date (for example, `Yesterday`). Platform remains
+    available in the game form, detail view, and advanced browser filter.
   - **GameQuery** is the single query surface (not many narrow endpoints): `search`
     (title), `statuses` (OR), `platforms` (OR), `genres` + `genreMatch` (any/all),
     `releaseYear`/`startedYear`/`finishedYear`/`playedYear`, `minRating`/`maxRating`,

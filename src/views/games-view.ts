@@ -1,6 +1,7 @@
 import { gamesApi } from "../api/games";
 import { clear, el } from "../ui/dom";
 import { confirmDialog } from "../ui/confirm";
+import { formatPlayDuration, formatTimeSince } from "../ui/format";
 import {
   GAME_SORTS,
   GAME_STATUSES,
@@ -318,6 +319,14 @@ function emptyState(): HTMLElement {
   ]);
 }
 
+function gameTimeLabel(game: Game): string {
+  if (game.status === "playing") {
+    return game.startedAt ? formatTimeSince(game.startedAt) : "—";
+  }
+
+  return game.startedAt && game.finishedAt ? formatPlayDuration(game.startedAt, game.finishedAt) : "—";
+}
+
 function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void>): HTMLElement {
   const rows = games.map((game) =>
     el("tr", {}, [
@@ -329,7 +338,7 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
         ),
       ]),
       el("td", { class: "genres-cell" }, [game.genres.length ? game.genres.join(", ") : "—"]),
-      el("td", {}, [game.platform ?? "—"]),
+      el("td", {}, [gameTimeLabel(game)]),
       el("td", {}, [el("span", { class: `badge status-${game.status}` }, [STATUS_LABELS[game.status]])]),
       el("td", { class: "num" }, [game.rating === null ? "—" : `${game.rating}/10`]),
       el("td", { class: "actions" }, [
@@ -371,7 +380,7 @@ function gamesTable(games: Game[], root: HTMLElement, reload: () => Promise<void
       el("tr", {}, [
         el("th", {}, ["Title"]),
         el("th", {}, ["Genres"]),
-        el("th", {}, ["Platform"]),
+        el("th", {}, ["Time"]),
         el("th", {}, ["Status"]),
         el("th", { class: "num" }, ["Rating"]),
         el("th", {}, [""]),
