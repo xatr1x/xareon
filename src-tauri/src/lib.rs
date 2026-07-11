@@ -68,6 +68,9 @@ pub fn run() {
             });
             crate::config::session_indicator::setup(app.handle())?;
             crate::config::global_shortcut::replace(app.handle(), None, shortcut.as_deref())?;
+            // Set the base (non-playing) Dock icon at launch so it always shows,
+            // not only after a session starts.
+            commands::play_session_commands::set_playing_icon(app.handle(), false);
             Ok(())
         })
         .on_window_event(|window, event| {

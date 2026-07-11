@@ -451,13 +451,20 @@ achievements dashboard. Games, Statistics and Settings are live nav entries.
 - **`bundled` SQLite.** No system SQLite dependency; reproducible builds.
 - **Hand-rolled migration runner.** `user_version`-based, zero extra dependencies, easy to
   reason about. Append-only — never edit an applied migration.
-- **Icons** are generated from the white-and-blue stylized X seed at
-  `src-tauri/icons/icon-source.png` via `npm run tauri -- icon src-tauri/icons/icon-source.png`.
-  The generated platform formats are committed under `src-tauri/icons/`; replace the seed
-  and rerun that command to rebrand. Copy the generated `128x128.png` to
-  `public/xareon-icon.png` so the sidebar brand uses the same icon at runtime.
-  The seed is a rounded macOS-style tile; `icon-playing.png` is the runtime green
-  Play-badged state. Runtime decoding uses Tauri's `image-png` feature.
+- **Icons** are the white-and-blue stylized X. The macOS-facing assets carry genuine
+  **transparent squircle corners** (an alpha mask with ~7% margin and ~22% corner radius —
+  macOS does not round Dock icons itself, so the PNG must already be shaped):
+  `icon-source.png` (base) and `icon-playing.png` (runtime green Play-badged state) are the
+  Dock icons embedded via `include_bytes!`; `icon.icns` is the bundle icon, built from the
+  rounded base with `sips` + `iconutil` (a `.iconset` of 16→1024px). The base Dock icon is
+  applied at launch in `lib.rs` `setup` (`set_playing_icon(false)`) so it always shows in
+  dev, not only after a session starts. Runtime decoding uses Tauri's `image-png` feature.
+  - **Do not** blindly rerun `npm run tauri -- icon …` from the rounded source: it would
+    propagate the transparent corners into the iOS/Android/Windows icons, which apply their
+    own platform masking and expect a full-bleed square. The desktop PNGs (`32/64/128/
+    128@2x`, `icon.png`) and `icon.icns` are the macOS/Linux set kept in sync with the seed;
+    the `Square*Logo.png`, `ios/`, and `android/` assets stay square. Copy the `128x128.png`
+    to `public/xareon-icon.png` so the sidebar brand matches.
 
 ## 9a. Cross-platform requirements
 
