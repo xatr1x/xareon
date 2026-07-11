@@ -37,21 +37,22 @@ export function renderStatisticsView(root: HTMLElement): void {
   clear(root);
   const body = el("div", { class: "view-body" });
 
-  const load = async (): Promise<void> => {
-    clear(body);
-    body.append(el("p", { class: "muted" }, ["Loading…"]));
+  // `showLoading` only on the first open. On a granularity change we keep the
+  // current content on screen and swap it atomically once the new data arrives,
+  // so the page never collapses to an empty "Loading…" state (which looked like
+  // a full reload: the layout shrank, scroll jumped to top, then re-expanded).
+  const load = async (showLoading: boolean): Promise<void> => {
+    if (showLoading) body.replaceChildren(el("p", { class: "muted" }, ["Loading…"]));
     try {
       const stats = await statisticsApi.get(granularity);
-      clear(body);
-      body.append(renderStats(stats));
+      body.replaceChildren(renderStats(stats));
     } catch (e) {
-      clear(body);
-      body.append(el("p", { class: "form-error" }, [`Failed to load statistics: ${String(e)}`]));
+      body.replaceChildren(el("p", { class: "form-error" }, [`Failed to load statistics: ${String(e)}`]));
     }
   };
 
-  root.append(buildHeader(() => void load()), body);
-  void load();
+  root.append(buildHeader(() => void load(false)), body);
+  void load(true);
 }
 
 function buildHeader(reload: () => void): HTMLElement {
@@ -63,6 +64,7 @@ function buildHeader(reload: () => void): HTMLElement {
       const button = el(
         "button",
         {
+          type: "button",
           class: `seg-btn${granularity === option.id ? " on" : ""}`,
           onclick: () => {
             granularity = option.id;
