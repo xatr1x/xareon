@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings } from "../types/settings";
+import type { ProfileSyncInfo, Settings } from "../types/settings";
 
 /** Thin typed wrapper around the Tauri `get_settings` / `update_settings` commands. */
 export const settingsApi = {
@@ -14,5 +14,20 @@ export const settingsApi = {
   },
   resumePlayTrackingShortcut(): Promise<void> {
     return invoke<void>("resume_play_tracking_shortcut");
+  },
+  getProfileSyncInfo(): Promise<ProfileSyncInfo> {
+    return invoke<ProfileSyncInfo>("get_profile_sync_info");
+  },
+  chooseProfileSyncFolder(): Promise<ProfileSyncInfo | null> {
+    return invoke<ProfileSyncInfo | null>("choose_profile_sync_folder");
+  },
+  uploadProfileBackup(): Promise<void> {
+    return invoke<void>("upload_profile_backup");
+  },
+  restoreProfileBackup(): Promise<void> {
+    return invoke<void>("restore_profile_backup");
+  },
+  openDatabaseFolder(): Promise<void> {
+    return invoke<void>("open_database_folder");
   },
 };

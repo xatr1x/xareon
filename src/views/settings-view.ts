@@ -1,6 +1,7 @@
 import { settingsApi } from "../api/settings";
 import { clear, el } from "../ui/dom";
-import type { Settings } from "../types/settings";
+import { confirmDialog } from "../ui/confirm";
+import type { ProfileSyncInfo, ProfileSyncStatus, Settings } from "../types/settings";
 
 /**
  * Settings page. Loads the current values on open and persists them on Save.
@@ -16,9 +17,12 @@ export function renderSettingsView(root: HTMLElement): void {
     clear(container);
     container.append(el("p", { class: "muted" }, ["Loading…"]));
     try {
-      const settings = await settingsApi.get();
+      const [settings, syncInfo] = await Promise.all([
+        settingsApi.get(),
+        settingsApi.getProfileSyncInfo(),
+      ]);
       clear(container);
-      container.append(form(settings));
+      container.append(form(settings, syncInfo, load));
     } catch (e) {
       clear(container);
       container.append(el("p", { class: "form-error" }, [`Failed to load: ${String(e)}`]));
@@ -28,7 +32,7 @@ export function renderSettingsView(root: HTMLElement): void {
   void load();
 }
 
-function form(settings: Settings): HTMLElement {
+function form(settings: Settings, syncInfo: ProfileSyncInfo, reload: () => Promise<void>): HTMLElement {
   const field = (
     name: string,
     label: string,
@@ -48,13 +52,7 @@ function form(settings: Settings): HTMLElement {
     "userIdentifier",
     "User identifier",
     settings.userIdentifier,
-    "Your public, human-readable handle in Xareon (e.g. vitalii). Shared with friends and used as your Google Drive folder name. Not a UUID.",
-  );
-  const googleDriveFolder = field(
-    "googleDriveFolder",
-    "Google Drive folder URL",
-    settings.googleDriveFolder,
-    "Link to your shared Google Drive folder, used later for synchronization.",
+    "Your public, human-readable handle in Xareon (e.g. vitalii). Shared with friends. Not a UUID.",
   );
   const playTrackingShortcut = shortcutField(settings.playTrackingShortcut);
 
@@ -76,13 +74,11 @@ function form(settings: Settings): HTMLElement {
         error.textContent = "";
         const input: Settings = {
           userIdentifier: text(userIdentifier.input),
-          googleDriveFolder: text(googleDriveFolder.input),
           playTrackingShortcut: playTrackingShortcut.value(),
         };
         try {
           const saved = await settingsApi.update(input);
           userIdentifier.input.value = saved.userIdentifier ?? "";
-          googleDriveFolder.input.value = saved.googleDriveFolder ?? "";
           playTrackingShortcut.set(saved.playTrackingShortcut);
           message.textContent = "Settings saved.";
         } catch (e) {
@@ -94,9 +90,9 @@ function form(settings: Settings): HTMLElement {
       el("div", { class: "view-header" }, [el("h1", {}, ["Settings"])]),
       el("div", { class: "form-grid" }, [
         userIdentifier.row,
-        googleDriveFolder.row,
         playTrackingShortcut.row,
       ]),
+      syncSection(syncInfo, reload, error, message),
       error,
       message,
       el("div", { class: "modal-actions" }, [
@@ -104,6 +100,97 @@ function form(settings: Settings): HTMLElement {
       ]),
     ],
   );
+}
+
+function syncSection(
+  info: ProfileSyncInfo,
+  reload: () => Promise<void>,
+  error: HTMLElement,
+  message: HTMLElement,
+): HTMLElement {
+  const busy = (value: boolean, buttons: HTMLButtonElement[]): void => {
+    for (const button of buttons) button.disabled = value;
+  };
+  const choose = el("button", { type: "button", class: "btn" }, [
+    info.folder ? "Change folder" : "Choose folder",
+  ]);
+  const openDb = el("button", { type: "button", class: "btn" }, ["Open DB folder"]);
+  const upload = el("button", { type: "button", class: "btn btn-primary" }, ["Upload backup"]);
+  const restore = el("button", { type: "button", class: "btn btn-danger" }, ["Download & restore"]);
+  const buttons = [choose, openDb, upload, restore];
+  upload.disabled = !info.folder;
+  restore.disabled = !info.folder || info.status === "backupUnavailable" || info.status === "invalidBackup";
+
+  const run = async (action: () => Promise<unknown>, success?: string): Promise<void> => {
+    error.textContent = "";
+    message.textContent = "";
+    busy(true, buttons);
+    try {
+      await action();
+      if (success) message.textContent = success;
+      await reload();
+    } catch (e) {
+      error.textContent = String(e);
+      busy(false, buttons);
+    }
+  };
+
+  choose.addEventListener("click", () => void run(() => settingsApi.chooseProfileSyncFolder()));
+  openDb.addEventListener("click", () => void run(() => settingsApi.openDatabaseFolder()));
+  upload.addEventListener("click", () => void run(() => settingsApi.uploadProfileBackup(), "Backup uploaded."));
+  restore.addEventListener("click", async () => {
+    const confirmed = await confirmDialog(
+      "This will replace the current local database with the selected backup. Xareon will first create a safety copy, then restart.",
+      { confirmLabel: "Restore and restart", danger: true },
+    );
+    if (confirmed) void run(() => settingsApi.restoreProfileBackup());
+  });
+
+  const folder = info.folder ?? "No folder selected";
+  const detail = info.statusDetail ? ` ${info.statusDetail}` : "";
+  return el("section", { class: "sync-settings" }, [
+    el("div", { class: "sync-heading" }, [
+      el("div", {}, [
+        el("h2", {}, ["Profile backup"]),
+        el("p", { class: "field-hint" }, [
+          "Manual synchronization through a local Google Drive folder on this device.",
+        ]),
+      ]),
+      choose,
+    ]),
+    el("div", { class: "sync-folder", title: folder }, [folder]),
+    el("div", { class: `sync-status sync-status-${info.status}` }, [
+      statusLabel(info.status),
+      detail,
+    ]),
+    el("div", { class: "sync-metadata" }, [
+      marker("Last upload on this device", info.lastUploadAt),
+      marker("Last restore on this device", info.lastRestoreAt),
+      marker("Cloud backup created", info.backupCreatedAt, info.backupPlatform),
+    ]),
+    el("div", { class: "sync-actions" }, [openDb, upload, restore]),
+  ]);
+}
+
+function marker(label: string, timestamp: number | null, suffix: string | null = null): HTMLElement {
+  const value = timestamp === null ? "Never" : new Date(timestamp * 1000).toLocaleString();
+  return el("div", {}, [
+    el("span", {}, [label]),
+    el("strong", {}, [suffix ? `${value} · ${suffix}` : value]),
+  ]);
+}
+
+function statusLabel(status: ProfileSyncStatus): string {
+  const labels: Record<ProfileSyncStatus, string> = {
+    folderNotSelected: "Choose a Google Drive folder to enable backups.",
+    backupUnavailable: "No backup is available in the selected folder.",
+    upToDate: "Local database and backup are up to date.",
+    localNewer: "Local database is newer.",
+    backupNewer: "Backup is newer.",
+    conflict: "Local database and backup have diverged.",
+    invalidBackup: "The backup is invalid.",
+  };
+  return labels[status];
 }
 
 function shortcutField(initial: string | null): {

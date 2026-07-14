@@ -37,6 +37,10 @@ struct Migration {
     sql: &'static str,
 }
 
+pub fn current_version() -> i64 {
+    MIGRATIONS.len() as i64
+}
+
 /// Apply every migration whose 1-based index is greater than the database's
 /// current `user_version`, advancing `user_version` as it goes.
 pub fn run(conn: &Connection) -> AppResult<()> {

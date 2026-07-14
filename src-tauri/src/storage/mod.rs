@@ -4,3 +4,4 @@
 //! must go through this layer rather than calling filesystem APIs directly from
 //! services or commands, so paths and lifecycle stay in one place. No
 //! implementation yet (no file-backed features exist).
+pub mod profile_sync;

@@ -22,11 +22,18 @@ impl DatabaseManager {
 
     /// Run `f` with exclusive access to a connection. This is the only way to
     /// obtain a connection, keeping the locking strategy an internal detail.
-    pub fn with_connection<T>(
-        &self,
-        f: impl FnOnce(&Connection) -> AppResult<T>,
-    ) -> AppResult<T> {
+    pub fn with_connection<T>(&self, f: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
         let connection = self.connection.lock().expect("database mutex poisoned");
         f(&connection)
+    }
+
+    /// Run `f` with mutable access when an operation targets the database
+    /// connection itself (currently profile restore via SQLite's Backup API).
+    pub fn with_connection_mut<T>(
+        &self,
+        f: impl FnOnce(&mut Connection) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        f(&mut connection)
     }
 }

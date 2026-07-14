@@ -2,6 +2,24 @@
 
 export interface Settings {
   userIdentifier: string | null;
-  googleDriveFolder: string | null;
   playTrackingShortcut: string | null;
+}
+
+export type ProfileSyncStatus =
+  | "folderNotSelected"
+  | "backupUnavailable"
+  | "upToDate"
+  | "localNewer"
+  | "backupNewer"
+  | "conflict"
+  | "invalidBackup";
+
+export interface ProfileSyncInfo {
+  folder: string | null;
+  status: ProfileSyncStatus;
+  statusDetail: string | null;
+  lastUploadAt: number | null;
+  lastRestoreAt: number | null;
+  backupCreatedAt: number | null;
+  backupPlatform: string | null;
 }

@@ -43,7 +43,8 @@ commands  →  services  →  repositories  →  db
 Supporting layers (used by services as they grow):
 
 - **validation** — reusable validation rules (`require_non_empty`, `require_in_range`).
-- **storage** — file storage for covers/screenshots/backups (reserved; see §11 step 5a).
+- **storage** — file-backed features. `profile_sync` owns SQLite snapshots, backup
+  manifests, checksums, safety copies and per-device sync state.
 - **config** — application configuration (reserved).
 - **events** — domain events (reserved).
 
@@ -70,6 +71,7 @@ xareon/
 ├── vite.config.ts              # Vite/Tauri dev server config
 ├── AGENTS.md                   # this file
 ├── idea.md                     # original product specification
+├── ideas/db-sync.md            # Ukrainian design for manual profile synchronization
 ├── src/                        # frontend (TypeScript, UI only)
 │   ├── main.ts                 # app shell + sidebar navigation
 │   ├── styles.css              # dark, minimal theme
@@ -79,7 +81,7 @@ xareon/
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
 │   │   ├── play-sessions.ts    # manual play tracking + today/week play-time totals
 │   │   ├── statistics.ts       # wrapper over get_statistics
-│   │   └── settings.ts         # wrappers over get_settings/update_settings
+│   │   └── settings.ts         # settings + profile backup command wrappers
 │   ├── types/
 │   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
@@ -87,7 +89,7 @@ xareon/
 │   │   ├── journal.ts          # JournalEntry + inputs
 │   │   ├── play-session.ts     # PlaySession + PlayTimeTotals
 │   │   ├── statistics.ts       # Statistics aggregate + StatBar/StatsSummary/granularity
-│   │   └── settings.ts         # Settings
+│   │   └── settings.ts         # Settings + ProfileSyncInfo/status
 │   ├── ui/
 │   │   ├── dom.ts              # tiny typed DOM helpers (el, clear)
 │   │   └── format.ts           # date/time formatting
@@ -96,7 +98,7 @@ xareon/
 │       ├── game-form.ts        # create/edit modal form (multi-genre input)
 │       ├── game-detail.ts      # tabbed game detail (overview/achievements/journal/details) + Edit/Delete
 │       ├── statistics-view.ts  # all-time dashboard: KPIs, heatmap, hand-rolled charts
-│       └── settings-view.ts    # settings page (load + save)
+│       └── settings-view.ts    # settings + manual Google Drive folder backup/restore
 └── src-tauri/                  # backend (Rust)
     ├── Cargo.toml
     ├── build.rs
@@ -135,7 +137,8 @@ xareon/
         │   └── settings_service.rs # SettingsService (maps typed Settings ↔ KV keys)
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
-        ├── storage/            # file storage (covers, screenshots, backups) — reserved
+        ├── storage/
+        │   └── profile_sync.rs # SQLite snapshot/restore, manifest, hash + local sync state
         ├── config/
         │   ├── mod.rs
         │   ├── global_shortcut.rs # macOS/Windows shortcut registration adapter
@@ -147,6 +150,7 @@ xareon/
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
         │   ├── play_session_commands.rs # Play/Stop/heartbeat + play-time totals + Dock icon
+        │   ├── profile_sync_commands.rs # folder picker, backup/restore + reveal DB
         │   ├── statistics_commands.rs # get_statistics (read-only)
         │   └── settings_commands.rs # get_settings, update_settings (write in a tx)
         ├── db/
@@ -166,8 +170,10 @@ xareon/
 
 - **Tauri v2** — desktop shell.
 - **Rust** — backend / all application logic.
-- **rusqlite** (`bundled` feature) — SQLite driver; SQLite is compiled in, no system dep.
+- **rusqlite** (`bundled`, `backup`) — compiled-in SQLite plus Online Backup API snapshots.
 - **serde / serde_json** — (de)serialization across the command boundary.
+- **sha2** — SHA-256 integrity and freshness comparison for profile backups.
+- **rfd** — native macOS/Windows directory picker for the per-device sync folder.
 - **thiserror** — error type derivation.
 - **TypeScript** (strict) + **Vite** — frontend build. **No** UI framework (no React /
   Vue / Angular / Svelte). Vanilla DOM via small helpers.
@@ -355,14 +361,27 @@ disabled placeholder for a future cross-game dashboard.
   Commands: `get_settings`, `update_settings` (loads/saves the whole `Settings`
   aggregate). The typed `Settings` model maps to KV keys in `SettingsService` (the
   single mapping point); adding a setting is a field on `Settings` + a key there —
-  **no migration**. First settings: `userIdentifier` (human-readable public
-  handle, also the future Google Drive folder name; not a UUID) and
-  `googleDriveFolder` (URL stored now for the future sync system — the Drive
-  integration itself is not implemented). Saving runs inside a transaction so all
-  settings commit atomically.
+  **no migration**. `userIdentifier` is the human-readable public handle (not a UUID).
+  Saving runs inside a transaction so all settings commit atomically. The profile sync
+  folder is deliberately not a `Settings` field: it is device-specific and lives in
+  app-config so restoring a Mac database cannot overwrite the Windows folder path.
   `playTrackingShortcut` stores the configurable global Play/Stop accelerator. The
   Settings UI captures a real key combination in a read-only shortcut input; Backspace
   disables it. Saving validates and replaces the OS registration before committing.
+
+- **Profile backup / manual synchronization** — uses a user-selected local folder that
+  Google Drive for desktop synchronizes; there is no Google API or network code in
+  Xareon. Commands: `choose_profile_sync_folder`, `get_profile_sync_info`,
+  `upload_profile_backup`, `restore_profile_backup`, `open_database_folder`.
+  `rfd` provides the native directory picker on macOS and Windows. Upload uses SQLite's
+  Online Backup API and publishes `xareon-backup.sqlite` plus `xareon-backup.json`
+  (SHA-256, size, schema version, UTC creation time and source platform) through temporary
+  files. Restore validates the checksum, `PRAGMA integrity_check` and schema, stops an
+  active play session, writes `app_data/backups/pre-restore-*.sqlite`, replaces the live
+  database through the same Backup API and restarts Xareon. Per-device `profile-sync.json`
+  stores the selected folder, operation dates and last common hash outside SQLite.
+  Settings reports up-to-date/local-newer/backup-newer/conflict/unavailable/invalid states;
+  conflict detection compares content hashes against that baseline, never file mtimes.
 
 - **Play tracking** — manual real-play sessions. Commands: `get_active_play_session`,
   `get_play_time_totals`, `get_game_play_time_today`, `start_play_session`,
@@ -516,14 +535,17 @@ The cross-platform rules are mandatory:
 
 - Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), manual
   **Play tracking** (single active session, history and cached total), the
-  per-game **Journal**, per-game **Achievements**, and **Settings** (user identifier +
-  Google Drive folder URL). Not yet built: personal tags, screenshot gallery,
-  statistics, timeline, global achievements dashboard.
+  per-game **Journal**, per-game **Achievements**, **Statistics**, **Settings**, and manual
+  profile backup/restore through a Google Drive-synchronized local folder. Not yet built:
+  personal tags, screenshot gallery, timeline, global achievements dashboard.
 - Dates are stored as plain ISO/`datetime('now')` strings (`TEXT`, UTC); no calendar or
   timezone handling beyond formatting in the UI.
 - The browser query has no pagination yet (fine for a personal library; revisit if needed).
-- No automated tests yet (services are generic over repository traits to allow fakes).
-- Single local database; no backup/restore, sync, or import.
+- Automated coverage currently includes focused profile backup/status/restore tests; most
+  services still rely on generic repository boundaries for future fake-based tests.
+- Sync is intentionally manual and whole-database: it cannot merge independently edited
+  Mac and Windows databases. Wait for Google Drive desktop sync between Upload and Restore;
+  a detected divergence requires consciously choosing which whole copy wins.
 - The global shortcut compiles and is validated on macOS. The Windows implementation
   uses the plugin's supported Windows backend but has not yet been compile-checked or
   exercised because the Windows Rust target is not installed in the current environment.
@@ -554,20 +576,18 @@ Adding a module (e.g. Journal) end-to-end:
 ## 12. Roadmap
 
 Done: journal entries with date/time; multi-genre (normalized); search, filtering &
-sorting; centralized settings (user identifier + Google Drive folder URL); per-game
-user-defined achievements with optional progress.
+sorting; centralized settings; per-game user-defined achievements with optional progress;
+statistics; manual whole-profile backup/restore via a local cloud-synced folder.
 
 Specified initial scope still to build:
 - Timeline view (cross-game).
 - Personal tags.
 - Screenshot gallery.
 - Global achievements dashboard (per-game custom achievements already exist).
-- Statistics page (incl. genre statistics, enabled by the normalized genres).
 
 Future expansion (from the spec):
 - Steam library import.
-- Backup & restore.
-- Cloud sync.
+- Automatic or merge-capable cloud sync (manual whole-profile transfer exists).
 - Plugins.
 - Playtime tracking.
 - Data export/import.

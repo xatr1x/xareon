@@ -11,12 +11,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// Human-readable, user-chosen public identifier (not a UUID). Later used as
-    /// the user's public name, their Google Drive folder name, and the handle
-    /// shared with friends.
+    /// the user's public name and the handle shared with friends.
     pub user_identifier: Option<String>,
-    /// URL of the user's shared Google Drive folder. Stored now for the future
-    /// synchronization system; the integration itself is out of scope here.
-    pub google_drive_folder: Option<String>,
     /// Global Play/Stop toggle accelerator. `None` disables the shortcut.
     pub play_tracking_shortcut: Option<String>,
 }

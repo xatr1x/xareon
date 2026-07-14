@@ -6,7 +6,6 @@ use crate::repositories::settings_repository::SettingsRepository;
 /// that knows both the typed model and the KV store) is the single mapping point
 /// when a new setting is added.
 const KEY_USER_IDENTIFIER: &str = "user_identifier";
-const KEY_GOOGLE_DRIVE_FOLDER: &str = "google_drive_folder";
 pub const KEY_PLAY_TRACKING_SHORTCUT: &str = "play_tracking_shortcut";
 pub const DEFAULT_PLAY_TRACKING_SHORTCUT: &str = "CmdOrCtrl+Shift+P";
 
@@ -27,7 +26,6 @@ impl<'a, R: SettingsRepository> SettingsService<'a, R> {
         let read = |key: &str| stored.get(key).filter(|v| !v.is_empty()).cloned();
         Ok(Settings {
             user_identifier: read(KEY_USER_IDENTIFIER),
-            google_drive_folder: read(KEY_GOOGLE_DRIVE_FOLDER),
             play_tracking_shortcut: if stored.contains_key(KEY_PLAY_TRACKING_SHORTCUT) {
                 read(KEY_PLAY_TRACKING_SHORTCUT)
             } else {
@@ -42,8 +40,6 @@ impl<'a, R: SettingsRepository> SettingsService<'a, R> {
     pub fn update(&self, settings: Settings) -> AppResult<Settings> {
         self.repo
             .set(KEY_USER_IDENTIFIER, &normalize(settings.user_identifier))?;
-        self.repo
-            .set(KEY_GOOGLE_DRIVE_FOLDER, &normalize(settings.google_drive_folder))?;
         self.repo.set(
             KEY_PLAY_TRACKING_SHORTCUT,
             &normalize(settings.play_tracking_shortcut),

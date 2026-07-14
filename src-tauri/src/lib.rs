@@ -18,10 +18,12 @@ mod validation;
 use tauri::Manager;
 
 use crate::db::manager::DatabaseManager;
-use crate::state::AppState;
-use crate::repositories::play_session_repository::{PlaySessionRepository, SqlitePlaySessionRepository};
+use crate::repositories::play_session_repository::{
+    PlaySessionRepository, SqlitePlaySessionRepository,
+};
 use crate::repositories::settings_repository::SqliteSettingsRepository;
 use crate::services::settings_service::SettingsService;
+use crate::state::AppState;
 
 /// Build and run the Tauri application: resolve the data directory, open the
 /// database (running migrations), register state and commands, then start.
@@ -36,7 +38,9 @@ pub fn run() {
                 use tauri_plugin_global_shortcut::ShortcutState;
 
                 if event.state() == ShortcutState::Pressed {
-                    if let Err(error) = commands::play_session_commands::toggle_from_global_shortcut(app) {
+                    if let Err(error) =
+                        commands::play_session_commands::toggle_from_global_shortcut(app)
+                    {
                         let changed = commands::play_session_commands::TrackingChanged {
                             game_id: None,
                             is_playing: false,
@@ -111,6 +115,11 @@ pub fn run() {
             commands::settings_commands::update_settings,
             commands::settings_commands::suspend_play_tracking_shortcut,
             commands::settings_commands::resume_play_tracking_shortcut,
+            commands::profile_sync_commands::choose_profile_sync_folder,
+            commands::profile_sync_commands::get_profile_sync_info,
+            commands::profile_sync_commands::upload_profile_backup,
+            commands::profile_sync_commands::restore_profile_backup,
+            commands::profile_sync_commands::open_database_folder,
             commands::play_session_commands::get_active_play_session,
             commands::play_session_commands::get_play_time_totals,
             commands::play_session_commands::get_game_play_time_today,

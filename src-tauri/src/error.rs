@@ -7,6 +7,12 @@ pub enum AppError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 
+    #[error("file error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("invalid sync metadata: {0}")]
+    Json(#[from] serde_json::Error),
+
     #[error("not found")]
     NotFound,
 
