@@ -17,12 +17,11 @@ mod validation;
 
 use tauri::Manager;
 
+use crate::config::device_settings::DeviceSettings;
 use crate::db::manager::DatabaseManager;
 use crate::repositories::play_session_repository::{
     PlaySessionRepository, SqlitePlaySessionRepository,
 };
-use crate::repositories::settings_repository::SqliteSettingsRepository;
-use crate::services::settings_service::SettingsService;
 use crate::state::AppState;
 
 /// Build and run the Tauri application: resolve the data directory, open the
@@ -63,15 +62,25 @@ pub fn run() {
                 SqlitePlaySessionRepository::new(&tx).recover_interrupted()?;
                 tx.commit()?;
             }
-            let shortcut = {
-                let repo = SqliteSettingsRepository::new(&conn);
-                SettingsService::new(&repo).get()?.play_tracking_shortcut
-            };
             app.manage(AppState {
                 db: DatabaseManager::new(conn),
             });
             crate::config::session_indicator::setup(app.handle())?;
-            crate::config::global_shortcut::replace(app.handle(), None, shortcut.as_deref())?;
+            let config_dir = app.path().app_config_dir()?;
+            let mut device_settings = DeviceSettings::load(&config_dir)?;
+            match crate::config::global_shortcut::replace(
+                app.handle(),
+                None,
+                device_settings.play_tracking_shortcut.as_deref(),
+            ) {
+                Ok(()) => device_settings.shortcut_registration_error = None,
+                Err(error) => {
+                    // A platform-reserved or occupied shortcut must never prevent
+                    // the application from starting. Settings shows the error.
+                    device_settings.shortcut_registration_error = Some(error.to_string());
+                }
+            }
+            device_settings.save(&config_dir)?;
             // Set the base (non-playing) Dock icon at launch so it always shows,
             // not only after a session starts.
             commands::play_session_commands::set_playing_icon(app.handle(), false);

@@ -3,6 +3,7 @@
 export interface Settings {
   userIdentifier: string | null;
   playTrackingShortcut: string | null;
+  playTrackingShortcutError?: string | null;
 }
 
 export type ProfileSyncStatus =

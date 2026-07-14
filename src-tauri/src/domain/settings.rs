@@ -15,4 +15,7 @@ pub struct Settings {
     pub user_identifier: Option<String>,
     /// Global Play/Stop toggle accelerator. `None` disables the shortcut.
     pub play_tracking_shortcut: Option<String>,
+    /// Present when the stored shortcut could not be registered on this device.
+    #[serde(default)]
+    pub play_tracking_shortcut_error: Option<String>,
 }

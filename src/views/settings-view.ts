@@ -55,6 +55,10 @@ function form(settings: Settings, syncInfo: ProfileSyncInfo, reload: () => Promi
     "Your public, human-readable handle in Xareon (e.g. vitalii). Shared with friends. Not a UUID.",
   );
   const playTrackingShortcut = shortcutField(settings.playTrackingShortcut);
+  const shortcutWarning = el("p", {
+    class: "shortcut-warning field-wide",
+    hidden: !settings.playTrackingShortcutError,
+  }, [settings.playTrackingShortcutError ?? ""]);
 
   const message = el("p", { class: "form-success" });
   const error = el("p", { class: "form-error" });
@@ -80,6 +84,8 @@ function form(settings: Settings, syncInfo: ProfileSyncInfo, reload: () => Promi
           const saved = await settingsApi.update(input);
           userIdentifier.input.value = saved.userIdentifier ?? "";
           playTrackingShortcut.set(saved.playTrackingShortcut);
+          shortcutWarning.hidden = true;
+          shortcutWarning.textContent = "";
           message.textContent = "Settings saved.";
         } catch (e) {
           error.textContent = String(e);
@@ -91,6 +97,7 @@ function form(settings: Settings, syncInfo: ProfileSyncInfo, reload: () => Promi
       el("div", { class: "form-grid" }, [
         userIdentifier.row,
         playTrackingShortcut.row,
+        shortcutWarning,
       ]),
       syncSection(syncInfo, reload, error, message),
       error,

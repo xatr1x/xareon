@@ -513,6 +513,12 @@ body {
   letter-spacing: 0.2px;
 }
 
+.shortcut-warning {
+  margin: -4px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .tracking-toast {
   position: fixed;
   right: 20px;

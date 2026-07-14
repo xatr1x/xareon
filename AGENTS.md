@@ -141,6 +141,7 @@ xareon/
         │   └── profile_sync.rs # SQLite snapshot/restore, manifest, hash + local sync state
         ├── config/
         │   ├── mod.rs
+        │   ├── device_settings.rs # local shortcut + registration error, never synchronized
         │   ├── global_shortcut.rs # macOS/Windows shortcut registration adapter
         │   └── session_indicator.rs # active-session menu bar/system tray lifecycle
         ├── events/            # domain events — reserved for future use
@@ -356,8 +357,8 @@ Game detail is a tabbed frontend view: Overview (summary cards + latest journal 
 Achievements, Journal, and Details. The global sidebar Achievements entry remains a
 disabled placeholder for a future cross-game dashboard.
 
-- **Settings** — a centralized, extensible settings system stored in SQLite as a
-  key-value store, designed to grow as future features need configuration.
+- **Settings** — profile settings use SQLite's extensible key-value store; settings that
+  belong to one installation use app-config JSON and are excluded from profile restore.
   Commands: `get_settings`, `update_settings` (loads/saves the whole `Settings`
   aggregate). The typed `Settings` model maps to KV keys in `SettingsService` (the
   single mapping point); adding a setting is a field on `Settings` + a key there —
@@ -365,9 +366,12 @@ disabled placeholder for a future cross-game dashboard.
   Saving runs inside a transaction so all settings commit atomically. The profile sync
   folder is deliberately not a `Settings` field: it is device-specific and lives in
   app-config so restoring a Mac database cannot overwrite the Windows folder path.
-  `playTrackingShortcut` stores the configurable global Play/Stop accelerator. The
+  `playTrackingShortcut` is likewise device-local in `device-settings.json`, because
+  macOS and Windows use different modifiers and reserve different combinations. The
   Settings UI captures a real key combination in a read-only shortcut input; Backspace
-  disables it. Saving validates and replaces the OS registration before committing.
+  disables it. Saving validates and replaces the OS registration. On startup an occupied
+  or invalid shortcut is non-fatal: Xareon opens without it, persists the registration
+  error locally and shows the warning on Settings so the user can choose another one.
 
 - **Profile backup / manual synchronization** — uses a user-selected local folder that
   Google Drive for desktop synchronizes; there is no Google API or network code in
@@ -546,9 +550,10 @@ The cross-platform rules are mandatory:
 - Sync is intentionally manual and whole-database: it cannot merge independently edited
   Mac and Windows databases. Wait for Google Drive desktop sync between Upload and Restore;
   a detected divergence requires consciously choosing which whole copy wins.
-- The global shortcut compiles and is validated on macOS. The Windows implementation
-  uses the plugin's supported Windows backend but has not yet been compile-checked or
-  exercised because the Windows Rust target is not installed in the current environment.
+- The global-shortcut backend has built and launched on Windows. A restored Mac shortcut
+  previously collided with Windows' reserved `Win+Shift+S`; shortcuts are now per-device
+  and startup registration failures are non-fatal. This corrective revision is compile-
+  checked on macOS and still needs one confirmation run on Windows hardware.
 - The Windows system tray cannot show a persistent text title beside its icon; current
   session duration is therefore available in its tooltip. This behavior is implemented
   through Tauri's cross-platform tray API but is not yet exercised on Windows hardware.
