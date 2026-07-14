@@ -10,3 +10,4 @@ pub mod play_session_commands;
 pub mod profile_sync_commands;
 pub mod settings_commands;
 pub mod statistics_commands;
+pub mod automatic_tracking_commands;

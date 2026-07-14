@@ -3,3 +3,4 @@
 pub mod device_settings;
 pub mod global_shortcut;
 pub mod session_indicator;
+pub mod automatic_tracking;

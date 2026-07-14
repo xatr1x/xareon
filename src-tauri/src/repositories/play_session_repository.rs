@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::domain::play_session::{ActivePlaySummary, PlaySession, PlayTimeTotals};
+use crate::domain::play_session::{ActivePlaySummary, PlaySession, PlayTimeTotals, SessionEndReason, TrackingSource};
 use crate::error::{AppError, AppResult};
 
 /// Start of the current week (Monday 00:00) as a local calendar date, for use in
@@ -10,8 +10,10 @@ const WEEK_START_LOCAL: &str = "date('now', 'localtime', 'weekday 0', '-6 days')
 pub trait PlaySessionRepository {
     fn active(&self) -> AppResult<Option<PlaySession>>;
     fn start(&self, game_id: i64) -> AppResult<PlaySession>;
+    fn start_automatic(&self, game_id: i64) -> AppResult<PlaySession>;
     fn heartbeat(&self, game_id: i64) -> AppResult<PlaySession>;
     fn stop(&self, game_id: i64) -> AppResult<()>;
+    fn stop_with_reason(&self, game_id: i64, reason: SessionEndReason) -> AppResult<()>;
     fn recover_interrupted(&self) -> AppResult<()>;
     fn most_recent_game_id(&self) -> AppResult<Option<i64>>;
     fn active_summary(&self) -> AppResult<Option<ActivePlaySummary>>;
@@ -19,6 +21,7 @@ pub trait PlaySessionRepository {
     fn play_time_totals(&self) -> AppResult<PlayTimeTotals>;
     /// Play time from completed sessions of one game that ended today.
     fn game_seconds_today(&self, game_id: i64) -> AppResult<i64>;
+    fn list_for_game(&self, game_id: i64, limit: i64) -> AppResult<Vec<PlaySession>>;
 }
 
 pub struct SqlitePlaySessionRepository<'a> { conn: &'a Connection }
@@ -31,17 +34,19 @@ impl<'a> SqlitePlaySessionRepository<'a> {
             id: row.get("id")?, game_id: row.get("game_id")?,
             started_at: row.get("started_at")?, ended_at: row.get("ended_at")?,
             last_activity_at: row.get("last_activity_at")?, duration_seconds: row.get("duration_seconds")?,
+            tracking_source: match row.get::<_, String>("tracking_source")?.as_str() { "automatic" => TrackingSource::Automatic, _ => TrackingSource::Manual },
+            ended_reason: row.get("ended_reason")?,
         })
     }
 
-    fn finish_at(&self, session: &PlaySession, ended_at: &str) -> AppResult<()> {
+    fn finish_at(&self, session: &PlaySession, ended_at: &str, reason: SessionEndReason) -> AppResult<()> {
         let duration = self.conn.query_row(
             "SELECT MAX(0, CAST(strftime('%s', ?1) AS INTEGER) - CAST(strftime('%s', ?2) AS INTEGER))",
             params![ended_at, session.started_at], |row| row.get::<_, i64>(0),
         )?;
         self.conn.execute(
-            "UPDATE play_sessions SET ended_at = ?1, last_activity_at = ?1, duration_seconds = ?2 WHERE id = ?3 AND ended_at IS NULL",
-            params![ended_at, duration, session.id],
+            "UPDATE play_sessions SET ended_at = ?1, last_activity_at = ?1, duration_seconds = ?2, ended_reason = ?3 WHERE id = ?4 AND ended_at IS NULL",
+            params![ended_at, duration, reason.as_str(), session.id],
         )?;
         self.conn.execute(
             "UPDATE games SET total_play_time_seconds = total_play_time_seconds + ?1, is_playing_now = 0, last_played_at = ?2, updated_at = datetime('now') WHERE id = ?3",
@@ -54,19 +59,17 @@ impl<'a> SqlitePlaySessionRepository<'a> {
 impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
     fn active(&self) -> AppResult<Option<PlaySession>> {
         Ok(self.conn.query_row(
-            "SELECT id, game_id, started_at, ended_at, last_activity_at, duration_seconds FROM play_sessions WHERE ended_at IS NULL LIMIT 1",
+            "SELECT id, game_id, started_at, ended_at, last_activity_at, duration_seconds, tracking_source, ended_reason FROM play_sessions WHERE ended_at IS NULL LIMIT 1",
             [], Self::map,
         ).optional()?)
     }
 
     fn start(&self, game_id: i64) -> AppResult<PlaySession> {
-        if self.active()?.is_some() { return Err(AppError::Validation("another game is already being tracked".into())); }
-        if !self.conn.query_row("SELECT EXISTS(SELECT 1 FROM games WHERE id = ?1)", [game_id], |r| r.get::<_, bool>(0))? {
-            return Err(AppError::NotFound);
-        }
-        self.conn.execute("INSERT INTO play_sessions (game_id, started_at, last_activity_at) VALUES (?1, datetime('now'), datetime('now'))", [game_id])?;
-        self.conn.execute("UPDATE games SET is_playing_now = 1, updated_at = datetime('now') WHERE id = ?1", [game_id])?;
-        self.active()?.ok_or_else(|| AppError::Validation("failed to start play session".into()))
+        self.start_with_source(game_id, TrackingSource::Manual)
+    }
+
+    fn start_automatic(&self, game_id: i64) -> AppResult<PlaySession> {
+        self.start_with_source(game_id, TrackingSource::Automatic)
     }
 
     fn heartbeat(&self, game_id: i64) -> AppResult<PlaySession> {
@@ -76,17 +79,19 @@ impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
         self.active()?.ok_or_else(|| AppError::Validation("active session disappeared".into()))
     }
 
-    fn stop(&self, game_id: i64) -> AppResult<()> {
+    fn stop(&self, game_id: i64) -> AppResult<()> { self.stop_with_reason(game_id, SessionEndReason::Manual) }
+
+    fn stop_with_reason(&self, game_id: i64, reason: SessionEndReason) -> AppResult<()> {
         let session = self.active()?.filter(|s| s.game_id == game_id)
             .ok_or_else(|| AppError::Validation("this game has no active session".into()))?;
         let now: String = self.conn.query_row("SELECT datetime('now')", [], |r| r.get(0))?;
-        self.finish_at(&session, &now)
+        self.finish_at(&session, &now, reason)
     }
 
     fn recover_interrupted(&self) -> AppResult<()> {
         if let Some(session) = self.active()? {
             let ended_at = session.last_activity_at.clone();
-            self.finish_at(&session, &ended_at)?;
+            self.finish_at(&session, &ended_at, SessionEndReason::Recovery)?;
         }
         self.conn.execute("UPDATE games SET is_playing_now = 0 WHERE is_playing_now = 1 AND id NOT IN (SELECT game_id FROM play_sessions WHERE ended_at IS NULL)", [])?;
         Ok(())
@@ -135,5 +140,23 @@ impl PlaySessionRepository for SqlitePlaySessionRepository<'_> {
             [game_id],
             |row| row.get(0),
         )?)
+    }
+
+    fn list_for_game(&self, game_id: i64, limit: i64) -> AppResult<Vec<PlaySession>> {
+        let mut stmt = self.conn.prepare("SELECT id, game_id, started_at, ended_at, last_activity_at, duration_seconds, tracking_source, ended_reason FROM play_sessions WHERE game_id = ?1 AND ended_at IS NOT NULL ORDER BY ended_at DESC, id DESC LIMIT ?2")?;
+        let rows = stmt.query_map(params![game_id, limit.clamp(1, 100)], Self::map)?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}
+
+impl SqlitePlaySessionRepository<'_> {
+    fn start_with_source(&self, game_id: i64, source: TrackingSource) -> AppResult<PlaySession> {
+        if self.active()?.is_some() { return Err(AppError::Validation("another game is already being tracked".into())); }
+        if !self.conn.query_row("SELECT EXISTS(SELECT 1 FROM games WHERE id = ?1)", [game_id], |r| r.get::<_, bool>(0))? {
+            return Err(AppError::NotFound);
+        }
+        self.conn.execute("INSERT INTO play_sessions (game_id, started_at, last_activity_at, tracking_source) VALUES (?1, datetime('now'), datetime('now'), ?2)", params![game_id, source.as_str()])?;
+        self.conn.execute("UPDATE games SET is_playing_now = 1, updated_at = datetime('now') WHERE id = ?1", [game_id])?;
+        self.active()?.ok_or_else(|| AppError::Validation("failed to start play session".into()))
     }
 }

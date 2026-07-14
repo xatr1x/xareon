@@ -106,6 +106,7 @@ function buildQuery(): GameQuery {
 }
 
 export function renderGamesView(root: HTMLElement): void {
+  root.dataset.view = "games-list";
   const results = el("div", { class: "view-body" });
   const summary = el("div", { class: "play-summary" });
 

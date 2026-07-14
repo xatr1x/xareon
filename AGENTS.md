@@ -72,11 +72,13 @@ xareon/
 ├── AGENTS.md                   # this file
 ├── idea.md                     # original product specification
 ├── ideas/db-sync.md            # Ukrainian design for manual profile synchronization
+├── ideas/auto-tracking.md      # Ukrainian design for Windows-only automatic play tracking
 ├── src/                        # frontend (TypeScript, UI only)
 │   ├── main.ts                 # app shell + sidebar navigation
 │   ├── styles.css              # dark, minimal theme
 │   ├── api/
 │   │   ├── achievements.ts     # wrappers over achievement commands
+│   │   ├── automatic-tracking.ts # Windows process bindings + tracking status
 │   │   ├── games.ts            # typed wrappers over game_* + list_genres
 │   │   ├── journal.ts          # wrappers over *_journal_entry commands
 │   │   ├── play-sessions.ts    # manual play tracking + today/week play-time totals
@@ -84,6 +86,7 @@ xareon/
 │   │   └── settings.ts         # settings + profile backup command wrappers
 │   ├── types/
 │   │   ├── achievement.ts      # Achievement/AchievementStatus + input types
+│   │   ├── automatic-tracking.ts # executable/process/status wire models
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
 │   │   ├── journal.ts          # JournalEntry + inputs
@@ -113,6 +116,7 @@ xareon/
         ├── error.rs            # AppError / AppResult
         ├── domain/
         │   ├── achievement.rs  # Achievement, AchievementStatus + inputs
+        │   ├── automatic_tracking.rs # bindings, processes, states + capabilities
         │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
         │   ├── genre.rs        # Genre + normalize()
         │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
@@ -121,6 +125,7 @@ xareon/
         │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
         │   ├── achievement_repository.rs # achievements table
+        │   ├── game_process_repository.rs # executable bindings + enable flag
         │   ├── game_repository.rs     # games table + browser query + genre hydration
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
@@ -129,6 +134,7 @@ xareon/
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
         │   ├── achievement_service.rs # validation + progress/status rules
+        │   ├── automatic_tracking_service.rs # binding rules/settings
         │   ├── game_service.rs     # GameService (validation + game/genre orchestration)
         │   ├── genre_service.rs    # GenreService (list genres)
         │   ├── journal_service.rs  # JournalService (validation, ensures game exists)
@@ -141,12 +147,14 @@ xareon/
         │   └── profile_sync.rs # SQLite snapshot/restore, manifest, hash + local sync state
         ├── config/
         │   ├── mod.rs
+        │   ├── automatic_tracking.rs # Windows poll worker, AFK + suppression
         │   ├── device_settings.rs # local shortcut + registration error, never synchronized
         │   ├── global_shortcut.rs # macOS/Windows shortcut registration adapter
         │   └── session_indicator.rs # active-session menu bar/system tray lifecycle
         ├── events/            # domain events — reserved for future use
         ├── commands/
         │   ├── achievement_commands.rs # achievement #[tauri::command] handlers
+        │   ├── automatic_tracking_commands.rs # processes, bindings + status
         │   ├── game_commands.rs     # game #[tauri::command] handlers (writes in a tx)
         │   ├── genre_commands.rs    # list_genres
         │   ├── journal_commands.rs  # journal #[tauri::command] handlers
@@ -164,7 +172,8 @@ xareon/
             ├── 0003_settings.sql        # settings key-value store
             ├── 0004_achievements.sql    # user-defined personal achievements
             ├── 0005_play_sessions.sql   # play history + cached totals
-            └── 0006_endless_status.sql  # rebuild games table to add the 'endless' status
+            ├── 0006_endless_status.sql  # rebuild games table to add the 'endless' status
+            └── 0007_automatic_tracking.sql # bindings + session source/reason
 ```
 
 ## 4. Technology stack
@@ -175,6 +184,8 @@ xareon/
 - **serde / serde_json** — (de)serialization across the command boundary.
 - **sha2** — SHA-256 integrity and freshness comparison for profile backups.
 - **rfd** — native macOS/Windows directory picker for the per-device sync folder.
+- **windows-sys** (Windows only) — process/window/last-input observation for automatic
+  play tracking; Xareon installs no keyboard or mouse hooks.
 - **thiserror** — error type derivation.
 - **TypeScript** (strict) + **Vite** — frontend build. **No** UI framework (no React /
   Vue / Angular / Svelte). Vanilla DOM via small helpers.
@@ -229,6 +240,7 @@ created with migrations applied on first launch.
 | total_play_time_seconds | INTEGER | NOT NULL; cached completed-session total       |
 | is_playing_now | INTEGER | boolean 0/1; fast projection of the active session    |
 | last_played_at | TEXT    | nullable; end time of the latest completed session    |
+| automatic_tracking_enabled | INTEGER | boolean 0/1; default off                 |
 
 `genres` — reusable genre entities (a game can have many; a genre many games).
 | column          | type    | notes                                              |
@@ -302,6 +314,12 @@ constant guarantees at most one unfinished session in the entire database.
 | last_activity_at | TEXT    | NOT NULL; heartbeat updates once per minute             |
 | duration_seconds | INTEGER | nullable while active; non-negative and fixed on Stop  |
 | created_at       | TEXT    | NOT NULL, default `datetime('now')                     |
+| tracking_source  | TEXT    | NOT NULL; `manual` or `automatic`                     |
+| ended_reason     | TEXT    | nullable; manual/process exit/AFK/shutdown/recovery   |
+
+`game_executable_bindings` — Windows executable paths used by automatic tracking. A game
+can own several bindings; normalized case-insensitive paths are globally unique. These
+profile rows are harmless on macOS, where the monitor and its UI are absent.
 
 ## 7. Modules (current)
 
@@ -387,8 +405,9 @@ disabled placeholder for a future cross-game dashboard.
   Settings reports up-to-date/local-newer/backup-newer/conflict/unavailable/invalid states;
   conflict detection compares content hashes against that baseline, never file mtimes.
 
-- **Play tracking** — manual real-play sessions. Commands: `get_active_play_session`,
-  `get_play_time_totals`, `get_game_play_time_today`, `start_play_session`,
+- **Play tracking** — manual and Windows-only automatic real-play sessions. Commands:
+  `get_active_play_session`, `list_game_play_sessions`, `get_play_time_totals`,
+  `get_game_play_time_today`, `start_play_session`,
   `heartbeat_play_session`, `stop_play_session`. Only one session
   can be active globally. Play/Stop atomically update the session and cached game fields,
   so reads never sum all history. Startup closes an interrupted session at its last
@@ -422,6 +441,18 @@ disabled placeholder for a future cross-game dashboard.
   the tray tooltip. Clicking the indicator focuses the main Xareon window. A backend
   minute worker owns both heartbeat updates and indicator refreshes, so crash recovery
   remains accurate even when game detail is not open or the window is in the background.
+  - On Windows, each game can bind several executable paths and opt into automatic
+    tracking (off by default). The Details tab exposes this only through a backend platform
+    capability. A backend worker observes processes, visible top-level windows,
+    foreground/minimized state and `GetLastInputInfo`. It starts after foreground plus new
+    input, stops on process exit, and ends after a 10-minute unfocused/idle grace period
+    included in play time; returning from AFK creates a new session. Manual sessions have
+    priority, and manually stopping an automatic session suppresses restart until all
+    bound processes exit. Automatic start/stop/AFK transitions emit
+    `play-tracking-changed`; an open game detail reloads itself in place (preserving its
+    selected tab), so the Play/Stop control, live timer, green indicator, automatic status
+    and history change without a manual refresh. Recent per-game history labels Manual and
+    Automatic sources.
 
 - **Statistics** — an all-time dashboard over the tracked history. Command:
   `get_statistics(granularity)` → a single `Statistics` aggregate. Read-only; a handful of
@@ -538,6 +569,7 @@ The cross-platform rules are mandatory:
 ## 10. Known limitations
 
 - Implemented: **Games** (CRUD + browser query), **Genres** (multi, normalized), manual
+  and Windows-only automatic
   **Play tracking** (single active session, history and cached total), the
   per-game **Journal**, per-game **Achievements**, **Statistics**, **Settings**, and manual
   profile backup/restore through a Google Drive-synchronized local folder. Not yet built:
@@ -557,6 +589,9 @@ The cross-platform rules are mandatory:
 - The Windows system tray cannot show a persistent text title beside its icon; current
   session duration is therefore available in its tooltip. This behavior is implemented
   through Tauri's cross-platform tray API but is not yet exercised on Windows hardware.
+- Automatic tracking is compile-checked on Windows, but foreground/exclusive-fullscreen,
+  protected-process, sleep/resume and AFK behavior still needs an end-to-end run with real
+  games on Windows hardware.
 
 ## 11. How to add a new feature
 
@@ -594,7 +629,6 @@ Future expansion (from the spec):
 - Steam library import.
 - Automatic or merge-capable cloud sync (manual whole-profile transfer exists).
 - Plugins.
-- Playtime tracking.
 - Data export/import.
 - Localization (multi-language support).
 - Theme manager (support additional themes in the future).

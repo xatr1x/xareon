@@ -1,6 +1,6 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use crate::domain::play_session::{PlaySession, PlayTimeTotals};
+use crate::domain::play_session::{PlaySession, PlayTimeTotals, TrackingSource};
 use crate::error::AppResult;
 use crate::repositories::play_session_repository::{
     PlaySessionRepository, SqlitePlaySessionRepository,
@@ -18,6 +18,7 @@ fn write<T>(state: &State<'_, AppState>, f: impl FnOnce(&PlaySessionService<'_, 
 #[tauri::command] pub fn get_active_play_session(state: State<'_, AppState>) -> AppResult<Option<PlaySession>> { read(&state, |s| s.active()) }
 #[tauri::command] pub fn get_play_time_totals(state: State<'_, AppState>) -> AppResult<PlayTimeTotals> { read(&state, |s| s.totals()) }
 #[tauri::command] pub fn get_game_play_time_today(state: State<'_, AppState>, game_id: i64) -> AppResult<i64> { read(&state, |s| s.game_today(game_id)) }
+#[tauri::command] pub fn list_game_play_sessions(state: State<'_, AppState>, game_id: i64) -> AppResult<Vec<PlaySession>> { read(&state, |s| s.history(game_id)) }
 pub(crate) fn set_playing_icon(app: &AppHandle, playing: bool) {
     let bytes = if playing {
         include_bytes!("../../icons/icon-playing.png").as_slice()
@@ -94,7 +95,11 @@ pub(crate) fn toggle_from_global_shortcut(app: &AppHandle) -> AppResult<Tracking
 }
 #[tauri::command] pub fn heartbeat_play_session(state: State<'_, AppState>, game_id: i64) -> AppResult<PlaySession> { write(&state, |s| s.heartbeat(game_id)) }
 #[tauri::command] pub fn stop_play_session(app: AppHandle, state: State<'_, AppState>, game_id: i64) -> AppResult<()> {
+    let source = read(&state, |s| s.active())?.filter(|session| session.game_id == game_id).map(|session| session.tracking_source);
     write(&state, |s| s.stop(game_id))?;
+    if source == Some(TrackingSource::Automatic) {
+        app.state::<crate::config::automatic_tracking::AutomaticTrackingRuntime>().suppress(game_id);
+    }
     set_playing_icon(&app, false);
     crate::config::session_indicator::refresh(&app);
     Ok(())

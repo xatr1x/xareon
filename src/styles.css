@@ -809,6 +809,30 @@ body {
 .details-list dd {
   color: var(--text);
 }
+.session-history { margin-top: 16px; }
+.session-history-list { display: flex; flex-direction: column; }
+.session-history-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.session-source-automatic { color: #64e67d; border-color: #2f6a3c; }
+
+.automatic-tracking {
+  max-width: 820px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.automatic-toggle { flex-direction: row; }
+.executable-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.executable-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
+.executable-info { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.executable-info span { overflow: hidden; color: var(--text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.process-picker { max-width: 720px; }
+.process-picker .search { width: 100%; max-width: none; margin-bottom: 12px; }
+.process-show-all { margin-bottom: 12px; }
+.process-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.process-row { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-input); color: var(--text); text-align: left; cursor: pointer; }
+.process-row:hover { border-color: var(--accent); }
+.process-row span, .process-row small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
 
 /* Achievements / Journal */
 .section-head {

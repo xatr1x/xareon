@@ -7,3 +7,4 @@ pub mod journal;
 pub mod settings;
 pub mod play_session;
 pub mod statistics;
+pub mod automatic_tracking;

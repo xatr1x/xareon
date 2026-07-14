@@ -14,6 +14,7 @@ mod services;
 mod state;
 mod storage;
 mod validation;
+mod platform;
 
 use tauri::Manager;
 
@@ -65,7 +66,9 @@ pub fn run() {
             app.manage(AppState {
                 db: DatabaseManager::new(conn),
             });
+            app.manage(crate::config::automatic_tracking::AutomaticTrackingRuntime::default());
             crate::config::session_indicator::setup(app.handle())?;
+            crate::config::automatic_tracking::setup(app.handle());
             let config_dir = app.path().app_config_dir()?;
             let mut device_settings = DeviceSettings::load(&config_dir)?;
             match crate::config::global_shortcut::replace(
@@ -94,7 +97,7 @@ pub fn run() {
                     {
                         let sessions = SqlitePlaySessionRepository::new(&tx);
                         if let Some(active) = sessions.active()? {
-                            sessions.stop(active.game_id)?;
+                            sessions.stop_with_reason(active.game_id, crate::domain::play_session::SessionEndReason::Shutdown)?;
                         }
                     }
                     tx.commit()?;
@@ -132,10 +135,18 @@ pub fn run() {
             commands::play_session_commands::get_active_play_session,
             commands::play_session_commands::get_play_time_totals,
             commands::play_session_commands::get_game_play_time_today,
+            commands::play_session_commands::list_game_play_sessions,
             commands::play_session_commands::start_play_session,
             commands::play_session_commands::heartbeat_play_session,
             commands::play_session_commands::stop_play_session,
             commands::statistics_commands::get_statistics,
+            commands::automatic_tracking_commands::get_platform_capabilities,
+            commands::automatic_tracking_commands::list_running_game_processes,
+            commands::automatic_tracking_commands::list_game_executable_bindings,
+            commands::automatic_tracking_commands::add_game_executable_binding,
+            commands::automatic_tracking_commands::delete_game_executable_binding,
+            commands::automatic_tracking_commands::set_automatic_tracking_enabled,
+            commands::automatic_tracking_commands::get_automatic_tracking_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xareon");

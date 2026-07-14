@@ -1,4 +1,5 @@
 import { achievementsApi } from "../api/achievements";
+import { automaticTrackingApi } from "../api/automatic-tracking";
 import { gamesApi } from "../api/games";
 import { journalApi } from "../api/journal";
 import { playSessionsApi } from "../api/play-sessions";
@@ -23,6 +24,8 @@ import {
 } from "../types/achievement";
 import { STATUS_LABELS, type Game } from "../types/game";
 import type { JournalEntry } from "../types/journal";
+import type { PlaySession } from "../types/play-session";
+import type { AutomaticTrackingStatus, ExecutableBinding, RunningProcess } from "../types/automatic-tracking";
 import { openGameForm } from "./game-form";
 
 type AchievementFormInput = Omit<NewAchievement, "displayOrder"> & { displayOrder: number };
@@ -44,6 +47,7 @@ const DETAIL_TABS: Array<{ id: DetailTab; label: string }> = [
  */
 export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () => void): void {
   clear(root);
+  root.dataset.view = "game-detail";
   let activeTab: DetailTab = "overview";
   const container = el("div", {});
   root.append(container);
@@ -52,18 +56,23 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
     clear(container);
     container.append(el("p", { class: "muted" }, ["Loading…"]));
     try {
-      const [game, achievements, entries, activeSession, todaySeconds] = await Promise.all([
+      const [game, achievements, entries, activeSession, todaySeconds, capabilities, sessionHistory] = await Promise.all([
         gamesApi.get(gameId),
         achievementsApi.listForGame(gameId),
         journalApi.listForGame(gameId),
         playSessionsApi.active(),
         playSessionsApi.gameTodaySeconds(gameId),
+        automaticTrackingApi.capabilities(),
+        playSessionsApi.history(gameId),
       ]);
+      const automatic = capabilities.automaticProcessTracking
+        ? await Promise.all([automaticTrackingApi.status(gameId), automaticTrackingApi.bindings(gameId)])
+        : null;
       clear(container);
       const tabContent = el("div", { class: "detail-tab-content" });
       const renderActiveTab = (): void => {
         clear(tabContent);
-        tabContent.append(activeTabContent(activeTab, game, achievements, entries, todaySeconds, load));
+        tabContent.append(activeTabContent(activeTab, game, achievements, entries, todaySeconds, sessionHistory, automatic, load));
       };
       container.append(
         header(game, activeSession?.gameId ?? null, onBack, load),
@@ -79,6 +88,16 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
       container.append(el("p", { class: "form-error" }, [`Failed to load: ${String(e)}`]));
     }
   };
+
+  const onTrackingChanged = (event: Event): void => {
+    if (!container.isConnected || root.dataset.view !== "game-detail") {
+      window.removeEventListener("xareon:play-tracking-changed", onTrackingChanged);
+      return;
+    }
+    const payload = (event as CustomEvent<{ gameId: number | null }>).detail;
+    if (payload.gameId === null || payload.gameId === gameId) void load();
+  };
+  window.addEventListener("xareon:play-tracking-changed", onTrackingChanged);
 
   void load();
 }
@@ -193,6 +212,8 @@ function activeTabContent(
   achievements: Achievement[],
   entries: JournalEntry[],
   todaySeconds: number,
+  sessionHistory: PlaySession[],
+  automatic: [AutomaticTrackingStatus, ExecutableBinding[]] | null,
   reload: () => Promise<void>,
 ): HTMLElement {
   switch (activeTab) {
@@ -201,9 +222,9 @@ function activeTabContent(
     case "journal":
       return journalSection(game, entries, reload);
     case "details":
-      return detailsSection(game);
+      return detailsSection(game, automatic, reload);
     case "overview":
-      return overviewSection(game, achievements, entries, todaySeconds);
+      return overviewSection(game, achievements, entries, todaySeconds, sessionHistory);
   }
 }
 
@@ -212,6 +233,7 @@ function overviewSection(
   achievements: Achievement[],
   entries: JournalEntry[],
   todaySeconds: number,
+  sessionHistory: PlaySession[],
 ): HTMLElement {
   const completed = achievements.filter((achievement) => achievement.status === "completed").length;
   const achievementSummary =
@@ -248,6 +270,20 @@ function overviewSection(
             ])
           : el("p", { class: "muted" }, ["No journal entries yet."]),
       ]),
+    ]),
+    playSessionHistory(sessionHistory),
+  ]);
+}
+
+function playSessionHistory(sessions: PlaySession[]): HTMLElement {
+  return el("section", { class: "session-history overview-block" }, [
+    el("h2", {}, ["Recent sessions"]),
+    ...(sessions.length === 0 ? [el("p", { class: "muted" }, ["No completed sessions yet."])] : [
+      el("div", { class: "session-history-list" }, sessions.map((session) => el("div", { class: "session-history-row" }, [
+        el("span", {}, [formatDateTime(session.endedAt ?? session.lastActivityAt)]),
+        el("strong", {}, [formatTrackedDuration(session.durationSeconds ?? 0)]),
+        el("span", { class: `badge session-source-${session.trackingSource}` }, [session.trackingSource === "automatic" ? "Automatic" : "Manual"]),
+      ]))),
     ]),
   ]);
 }
@@ -336,7 +372,11 @@ function gameSummary(game: Game): HTMLElement {
   return el("div", { class: "game-summary" }, [el("div", { class: "meta-row" }, meta), genres]);
 }
 
-function detailsSection(game: Game): HTMLElement {
+function detailsSection(
+  game: Game,
+  automatic: [AutomaticTrackingStatus, ExecutableBinding[]] | null,
+  reload: () => Promise<void>,
+): HTMLElement {
   const rows: Array<[string, string]> = [
     ["Title", game.title],
     ["Status", STATUS_LABELS[game.status]],
@@ -365,7 +405,103 @@ function detailsSection(game: Game): HTMLElement {
         el("dd", {}, [value]),
       ]),
     ),
+    ...(automatic ? [automaticTrackingSection(game.id, automatic[0], automatic[1], reload)] : []),
   ]);
+}
+
+const AUTO_STATE_LABELS: Record<AutomaticTrackingStatus["state"], string> = {
+  disabled: "Disabled",
+  process_not_running: "Process not running",
+  waiting_for_activity: "Waiting for foreground activity",
+  tracking: "Tracking automatically",
+  afk: "Paused while AFK",
+  suppressed: "Stopped manually until the game exits",
+};
+
+function automaticTrackingSection(
+  gameId: number,
+  status: AutomaticTrackingStatus,
+  bindings: ExecutableBinding[],
+  reload: () => Promise<void>,
+): HTMLElement {
+  const error = el("p", { class: "form-error" });
+  const toggle = el("input", {
+    type: "checkbox",
+    checked: status.enabled,
+    onchange: async () => {
+      toggle.setAttribute("disabled", "true");
+      try {
+        await automaticTrackingApi.setEnabled(gameId, toggle.checked);
+        await reload();
+      } catch (e) {
+        toggle.checked = status.enabled;
+        toggle.removeAttribute("disabled");
+        error.textContent = String(e);
+      }
+    },
+  });
+  const rows = bindings.length === 0
+    ? [el("p", { class: "muted" }, ["No executable linked yet."])]
+    : bindings.map((binding) => el("div", { class: "executable-row" }, [
+        el("div", { class: "executable-info" }, [
+          el("strong", {}, [binding.executableName]),
+          el("span", { title: binding.executablePath }, [binding.executablePath]),
+        ]),
+        el("button", {
+          class: "btn btn-sm btn-danger",
+          onclick: async () => {
+            try { await automaticTrackingApi.deleteBinding(gameId, binding.id); await reload(); }
+            catch (e) { error.textContent = String(e); }
+          },
+        }, ["Remove"]),
+      ]));
+  return el("section", { class: "automatic-tracking" }, [
+    el("div", { class: "section-head" }, [
+      el("div", {}, [el("h2", {}, ["Automatic tracking"]), el("p", { class: "muted" }, [AUTO_STATE_LABELS[status.state]])]),
+      el("label", { class: "checkbox-field automatic-toggle" }, [toggle, el("span", {}, ["Track automatically"])]),
+    ]),
+    el("div", { class: "executable-list" }, rows),
+    el("button", { class: "btn btn-sm", onclick: () => void openProcessPicker(gameId, reload) }, ["Select running process"]),
+    error,
+  ]);
+}
+
+async function openProcessPicker(gameId: number, reload: () => Promise<void>): Promise<void> {
+  const overlay = el("div", { class: "modal-overlay" });
+  const body = el("div", { class: "process-list" }, [el("p", { class: "muted" }, ["Loading processes…"])]);
+  const search = el("input", { class: "search", type: "search", placeholder: "Search processes" });
+  const error = el("p", { class: "form-error" });
+  let processes: RunningProcess[] = [];
+  let showAll = false;
+  const render = (): void => {
+    const query = search.value.trim().toLowerCase();
+    const visible = processes.filter((process) => (showAll || process.hasVisibleWindow) &&
+      `${process.executableName} ${process.windowTitle ?? ""} ${process.executablePath}`.toLowerCase().includes(query));
+    clear(body);
+    if (visible.length === 0) body.append(el("p", { class: "muted" }, ["No matching windowed processes."]));
+    for (const process of visible) body.append(el("button", {
+      class: "process-row",
+      onclick: async () => {
+        try { await automaticTrackingApi.addBinding(gameId, process.executablePath); overlay.remove(); await reload(); }
+        catch (e) { error.textContent = String(e); }
+      },
+    }, [
+      el("strong", {}, [process.executableName]),
+      el("span", {}, [process.windowTitle ?? `PID ${process.pid}`]),
+      el("small", { title: process.executablePath }, [process.executablePath]),
+    ]));
+  };
+  search.addEventListener("input", render);
+  const showAllInput = el("input", { type: "checkbox", onchange: () => { showAll = showAllInput.checked; render(); } });
+  overlay.append(el("div", { class: "modal process-picker" }, [
+    el("div", { class: "section-head" }, [el("h2", {}, ["Select running process"]), el("button", { class: "btn btn-sm", onclick: () => overlay.remove() }, ["Close"])]),
+    search,
+    el("label", { class: "checkbox-field process-show-all" }, [showAllInput, el("span", {}, ["Show processes without visible windows"])]),
+    body, error,
+  ]));
+  document.body.append(overlay);
+  try { processes = await automaticTrackingApi.runningProcesses(); render(); }
+  catch (e) { clear(body); error.textContent = String(e); }
 }
 
 function metaItem(label: string, value: string): HTMLElement {

@@ -8,3 +8,4 @@ pub mod journal_repository;
 pub mod settings_repository;
 pub mod play_session_repository;
 pub mod statistics_repository;
+pub mod game_process_repository;

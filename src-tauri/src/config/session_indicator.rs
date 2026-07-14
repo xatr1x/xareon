@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
@@ -27,11 +28,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
     tray.set_visible(false)?;
 
-    let handle = app.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
-        heartbeat_and_refresh(&handle);
-    });
+    #[cfg(not(target_os = "windows"))]
+    {
+        let handle = app.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(60));
+            heartbeat_and_refresh(&handle);
+        });
+    }
     Ok(())
 }
 
@@ -56,7 +60,7 @@ pub fn refresh(app: &AppHandle) {
     }
 }
 
-fn heartbeat_and_refresh(app: &AppHandle) {
+pub(crate) fn heartbeat_and_refresh(app: &AppHandle) {
     let state = app.state::<AppState>();
     let _ = state.db.with_connection(|conn| {
         let tx = conn.unchecked_transaction()?;

@@ -46,6 +46,7 @@ function mount(): void {
   const select = (item: NavItem): void => {
     current = item;
     for (const [id, btn] of buttons) btn.classList.toggle("active", id === item.id);
+    delete content.dataset.view;
     item.render(content);
   };
 
@@ -83,7 +84,9 @@ function mount(): void {
   void listen<{ gameId: number | null; isPlaying: boolean; error: string | null }>(
     "play-tracking-changed",
     ({ payload }) => {
-      if (current) current.render(content);
+      window.dispatchEvent(new CustomEvent("xareon:play-tracking-changed", { detail: payload }));
+      // Game detail owns a scoped reload so it can preserve its selected tab.
+      if (current && content.dataset.view !== "game-detail") current.render(content);
       toast.textContent = payload.error ?? (payload.isPlaying ? "Play tracking started" : "Play tracking stopped");
       toast.classList.remove("hidden", "error");
       toast.classList.toggle("error", payload.error !== null);

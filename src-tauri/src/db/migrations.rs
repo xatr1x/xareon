@@ -29,6 +29,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "0006_endless_status",
         sql: include_str!("../migrations/0006_endless_status.sql"),
     },
+    Migration {
+        name: "0007_automatic_tracking",
+        sql: include_str!("../migrations/0007_automatic_tracking.sql"),
+    },
 ];
 
 struct Migration {

@@ -12,4 +12,5 @@ impl<'a, R: PlaySessionRepository> PlaySessionService<'a, R> {
     pub fn stop(&self, game_id: i64) -> AppResult<()> { self.sessions.stop(game_id) }
     pub fn totals(&self) -> AppResult<PlayTimeTotals> { self.sessions.play_time_totals() }
     pub fn game_today(&self, game_id: i64) -> AppResult<i64> { self.sessions.game_seconds_today(game_id) }
+    pub fn history(&self, game_id: i64) -> AppResult<Vec<PlaySession>> { self.sessions.list_for_game(game_id, 20) }
 }
