@@ -55,8 +55,8 @@ function mount(): void {
     { class: "sidebar" },
     [
       el("div", { class: "brand" }, [
-        el("img", { class: "brand-icon", src: "/xareon-icon.png", alt: "" }),
-        el("span", {}, ["Xareon"]),
+        el("img", { class: "brand-icon", src: "/xavendrix-icon.png", alt: "" }),
+        el("span", {}, ["Xavendrix"]),
       ]),
       ...NAV.map((item) => {
         const btn = el(
@@ -84,7 +84,7 @@ function mount(): void {
   void listen<{ gameId: number | null; isPlaying: boolean; error: string | null }>(
     "play-tracking-changed",
     ({ payload }) => {
-      window.dispatchEvent(new CustomEvent("xareon:play-tracking-changed", { detail: payload }));
+      window.dispatchEvent(new CustomEvent("xavendrix:play-tracking-changed", { detail: payload }));
       // Game detail owns a scoped reload so it can preserve its selected tab.
       if (current && content.dataset.view !== "game-detail") current.render(content);
       toast.textContent = payload.error ?? (payload.isPlaying ? "Play tracking started" : "Play tracking stopped");

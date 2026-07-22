@@ -91,13 +91,13 @@ export function renderGameDetail(root: HTMLElement, gameId: number, onBack: () =
 
   const onTrackingChanged = (event: Event): void => {
     if (!container.isConnected || root.dataset.view !== "game-detail") {
-      window.removeEventListener("xareon:play-tracking-changed", onTrackingChanged);
+      window.removeEventListener("xavendrix:play-tracking-changed", onTrackingChanged);
       return;
     }
     const payload = (event as CustomEvent<{ gameId: number | null }>).detail;
     if (payload.gameId === null || payload.gameId === gameId) void load();
   };
-  window.addEventListener("xareon:play-tracking-changed", onTrackingChanged);
+  window.addEventListener("xavendrix:play-tracking-changed", onTrackingChanged);
 
   void load();
 }

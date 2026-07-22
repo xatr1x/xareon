@@ -1,4 +1,4 @@
-//! Xareon backend library. `main.rs` simply calls [`run`].
+//! Xavendrix backend library. `main.rs` simply calls [`run`].
 //!
 //! Layering (outer depends on inner): commands → services → repositories → db,
 //! with `domain` holding shared models and `error` the shared error type.
@@ -56,8 +56,10 @@ pub fn run() {
     builder
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            let config_dir = app.path().app_config_dir()?;
+            storage::legacy_app_migration::migrate_if_needed(&data_dir, &config_dir)?;
             std::fs::create_dir_all(&data_dir)?;
-            let conn = db::connection::open(&data_dir.join("xareon.db"))?;
+            let conn = db::connection::open(&data_dir.join("xavendrix.db"))?;
             {
                 let tx = conn.unchecked_transaction()?;
                 SqlitePlaySessionRepository::new(&tx).recover_interrupted()?;
@@ -69,7 +71,6 @@ pub fn run() {
             app.manage(crate::config::automatic_tracking::AutomaticTrackingRuntime::default());
             crate::config::session_indicator::setup(app.handle())?;
             crate::config::automatic_tracking::setup(app.handle());
-            let config_dir = app.path().app_config_dir()?;
             let mut device_settings = DeviceSettings::load(&config_dir)?;
             match crate::config::global_shortcut::replace(
                 app.handle(),
@@ -149,5 +150,5 @@ pub fn run() {
             commands::automatic_tracking_commands::get_automatic_tracking_status,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Xareon");
+        .expect("error while running Xavendrix");
 }

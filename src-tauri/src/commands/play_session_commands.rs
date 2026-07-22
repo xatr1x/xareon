@@ -74,7 +74,7 @@ pub(crate) fn toggle_from_global_shortcut(app: &AppHandle) -> AppResult<Tracking
                 TrackingChanged {
                     game_id: None,
                     is_playing: false,
-                    error: Some("Open Xareon and start a game once before using the shortcut.".into()),
+                    error: Some("Open Xavendrix and start a game once before using the shortcut.".into()),
                 }
             }
         };

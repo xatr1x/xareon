@@ -52,7 +52,7 @@ function form(settings: Settings, syncInfo: ProfileSyncInfo, reload: () => Promi
     "userIdentifier",
     "User identifier",
     settings.userIdentifier,
-    "Your public, human-readable handle in Xareon (e.g. vitalii). Shared with friends. Not a UUID.",
+    "Your public, human-readable handle in Xavendrix (e.g. vitalii). Shared with friends. Not a UUID.",
   );
   const playTrackingShortcut = shortcutField(settings.playTrackingShortcut);
   const shortcutWarning = el("p", {
@@ -147,7 +147,7 @@ function syncSection(
   upload.addEventListener("click", () => void run(() => settingsApi.uploadProfileBackup(), "Backup uploaded."));
   restore.addEventListener("click", async () => {
     const confirmed = await confirmDialog(
-      "This will replace the current local database with the selected backup. Xareon will first create a safety copy, then restart.",
+      "This will replace the current local database with the selected backup. Xavendrix will first create a safety copy, then restart.",
       { confirmLabel: "Restore and restart", danger: true },
     );
     if (confirmed) void run(() => settingsApi.restoreProfileBackup());
@@ -262,7 +262,7 @@ function shortcutField(initial: string | null): {
       el("span", {}, ["Play/Stop global shortcut"]),
       input,
       el("span", { class: "field-hint" }, [
-        "Works while Xareon is in the background. Stops the active session, or starts the most recently played game. Press Backspace to disable.",
+        "Works while Xavendrix is in the background. Stops the active session, or starts the most recently played game. Press Backspace to disable.",
       ]),
     ]),
     value: () => shortcut,

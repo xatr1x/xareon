@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> **Single source of truth for AI agents working on Xareon.**
+> **Single source of truth for AI agents working on Xavendrix.**
 > After **every** change to the project, update this file so it always reflects the
 > current implementation. Keep it accurate over comprehensive.
 
@@ -8,14 +8,14 @@
 
 ## 1. Purpose
 
-**Xareon** is a *personal desktop gaming journal* — not a games catalog. It exists to
+**Xavendrix** is a *personal desktop gaming journal* — not a games catalog. It exists to
 record one player's memories, thoughts, achievements, screenshots and personal history
 across many years. It is intentionally **not** about cataloging every game in the world;
 it captures *your* experience.
 
 ## 2. Architecture overview
 
-Xareon is a [Tauri v2](https://tauri.app/) desktop app. **All application logic lives in
+Xavendrix is a [Tauri v2](https://tauri.app/) desktop app. **All application logic lives in
 the Rust backend**; the TypeScript frontend is a thin, framework-free UI that talks to the
 backend exclusively through Tauri commands.
 
@@ -44,7 +44,8 @@ Supporting layers (used by services as they grow):
 
 - **validation** — reusable validation rules (`require_non_empty`, `require_in_range`).
 - **storage** — file-backed features. `profile_sync` owns SQLite snapshots, backup
-  manifests, checksums, safety copies and per-device sync state.
+  manifests, checksums, safety copies and per-device sync state;
+  `legacy_app_migration` performs the one-time pre-rename profile import.
 - **config** — application configuration (reserved).
 - **events** — domain events (reserved).
 
@@ -62,11 +63,11 @@ main.ts (shell/nav)  →  views/*  →  api/*  →  Tauri invoke
 ## 3. Directory structure
 
 ```
-xareon/
+xavendrix/
 ├── index.html                  # Vite entry
 ├── package.json                # frontend deps + scripts
 ├── public/
-│   └── xareon-icon.png         # frontend copy of the app icon, used in the sidebar brand
+│   └── xavendrix-icon.png         # frontend copy of the app icon, used in the sidebar brand
 ├── tsconfig.json               # strict TypeScript config
 ├── vite.config.ts              # Vite/Tauri dev server config
 ├── AGENTS.md                   # this file
@@ -110,7 +111,7 @@ xareon/
     │   └── default.json        # permissions for the main window
     ├── icons/                  # generated app icons (see §9)
     └── src/
-        ├── main.rs             # thin entry point → xareon_lib::run()
+        ├── main.rs             # thin entry point → xavendrix_lib::run()
         ├── lib.rs              # builds the Tauri app, registers state + commands
         ├── state.rs            # AppState { db: DatabaseManager }
         ├── error.rs            # AppError / AppResult
@@ -144,6 +145,7 @@ xareon/
         ├── validation/         # reusable business validation rules
         │   └── mod.rs          # require_non_empty, require_in_range
         ├── storage/
+        │   ├── legacy_app_migration.rs # safe one-time import from the pre-rename app namespace
         │   └── profile_sync.rs # SQLite snapshot/restore, manifest, hash + local sync state
         ├── config/
         │   ├── mod.rs
@@ -186,7 +188,7 @@ xareon/
 - **sha2** — SHA-256 integrity and freshness comparison for profile backups.
 - **rfd** — native macOS/Windows directory picker for the per-device sync folder.
 - **windows-sys** (Windows only) — process/window/last-input observation for automatic
-  play tracking; Xareon installs no keyboard or mouse hooks.
+  play tracking; Xavendrix installs no keyboard or mouse hooks.
 - **thiserror** — error type derivation.
 - **TypeScript** (strict) + **Vite** — frontend build. **No** UI framework (no React /
   Vue / Angular / Svelte). Vanilla DOM via small helpers.
@@ -204,8 +206,15 @@ npm run build               # frontend type-check (tsc) + production build only
 cd src-tauri && cargo build # compile the backend only
 ```
 
-The database lives in the OS app-data directory (`app_data_dir()/xareon.db`) and is
+The database lives in the OS app-data directory (`app_data_dir()/xavendrix.db`) and is
 created with migrations applied on first launch.
+
+On the first launch after the Xavendrix rename, startup checks the sibling legacy app-data
+namespace before opening SQLite. If the Xavendrix database has no games or profile settings
+and the legacy database passes `PRAGMA integrity_check`, it atomically imports that database,
+copies device/profile-sync metadata and backups, and keeps the generated empty database as
+`backups/pre-legacy-import-*.sqlite`. A non-empty Xavendrix profile is never overwritten.
+The old identifier/database strings remain only in this compatibility adapter and its tests.
 
 ## 6. Database
 
@@ -389,19 +398,19 @@ disabled placeholder for a future cross-game dashboard.
   macOS and Windows use different modifiers and reserve different combinations. The
   Settings UI captures a real key combination in a read-only shortcut input; Backspace
   disables it. Saving validates and replaces the OS registration. On startup an occupied
-  or invalid shortcut is non-fatal: Xareon opens without it, persists the registration
+  or invalid shortcut is non-fatal: Xavendrix opens without it, persists the registration
   error locally and shows the warning on Settings so the user can choose another one.
 
 - **Profile backup / manual synchronization** — uses a user-selected local folder that
   Google Drive for desktop synchronizes; there is no Google API or network code in
-  Xareon. Commands: `choose_profile_sync_folder`, `get_profile_sync_info`,
+  Xavendrix. Commands: `choose_profile_sync_folder`, `get_profile_sync_info`,
   `upload_profile_backup`, `restore_profile_backup`, `open_database_folder`.
   `rfd` provides the native directory picker on macOS and Windows. Upload uses SQLite's
-  Online Backup API and publishes `xareon-backup.sqlite` plus `xareon-backup.json`
+  Online Backup API and publishes `xavendrix-backup.sqlite` plus `xavendrix-backup.json`
   (SHA-256, size, schema version, UTC creation time and source platform) through temporary
   files. Restore validates the checksum, `PRAGMA integrity_check` and schema, stops an
   active play session, writes `app_data/backups/pre-restore-*.sqlite`, replaces the live
-  database through the same Backup API and restarts Xareon. Per-device `profile-sync.json`
+  database through the same Backup API and restarts Xavendrix. Per-device `profile-sync.json`
   stores the selected folder, operation dates and last common hash outside SQLite.
   Settings reports up-to-date/local-newer/backup-newer/conflict/unavailable/invalid states;
   conflict detection compares content hashes against that baseline, never file mtimes.
@@ -440,7 +449,7 @@ disabled placeholder for a future cross-game dashboard.
   menu bar or Windows system tray. It is fully hidden without an active session. On
   macOS its title displays elapsed time without seconds (`2h 14m`); Windows does not
   support persistent tray title text, so the duration and game title are exposed through
-  the tray tooltip. Clicking the indicator focuses the main Xareon window. A backend
+  the tray tooltip. Clicking the indicator focuses the main Xavendrix window. A backend
   minute worker owns both heartbeat updates and indicator refreshes, so crash recovery
   remains accurate even when game detail is not open or the window is in the background.
   - On Windows, each game can bind several executable paths and opt into automatic
@@ -527,11 +536,11 @@ achievements dashboard. Games, Statistics and Settings are live nav entries.
     own platform masking and expect a full-bleed square. The desktop PNGs (`32/64/128/
     128@2x`, `icon.png`) and `icon.icns` are the macOS/Linux set kept in sync with the seed;
     the `Square*Logo.png`, `ios/`, and `android/` assets stay square. Copy the `128x128.png`
-    to `public/xareon-icon.png` so the sidebar brand matches.
+    to `public/xavendrix-icon.png` so the sidebar brand matches.
 
 ## 9a. Cross-platform requirements
 
-Xareon targets both **macOS and Windows**. macOS is the current primary development
+Xavendrix targets both **macOS and Windows**. macOS is the current primary development
 environment, but Windows is a required supported platform rather than a future optional
 port. Before implementing any feature that touches the operating system, an agent must
 explicitly assess whether its APIs, behavior, assets, permissions, paths, lifecycle, or
@@ -648,5 +657,5 @@ Future expansion (from the spec):
 - Prefer extending existing modules over creating new abstractions.
 - Before adding a new dependency, first evaluate whether the same result can be achieved using the Rust standard library or existing project dependencies.
 - Keep dependencies to a minimum.
-- Journal entries (Diary Entries) are one of the core concepts of Xareon and should always be treated as a first-class feature rather than an auxiliary notes system.
+- Journal entries (Diary Entries) are one of the core concepts of Xavendrix and should always be treated as a first-class feature rather than an auxiliary notes system.
 - Whenever possible, keep the project understandable for future AI agents as well as human developers by maintaining clear module boundaries and keeping AGENTS.md up to date.

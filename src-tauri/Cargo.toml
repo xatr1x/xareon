@@ -1,5 +1,5 @@
 [package]
-name = "xareon"
+name = "xavendrix"
 version = "0.1.0"
 description = "A personal desktop gaming journal"
 edition = "2021"
@@ -7,7 +7,7 @@ rust-version = "1.77"
 
 [lib]
 # The library holds all application logic; `main.rs` is a thin entry point.
-name = "xareon_lib"
+name = "xavendrix_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

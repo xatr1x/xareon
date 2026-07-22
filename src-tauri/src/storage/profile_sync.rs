@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 use crate::db::migrations;
 use crate::error::{AppError, AppResult};
 
-const BACKUP_FILE: &str = "xareon-backup.sqlite";
-const MANIFEST_FILE: &str = "xareon-backup.json";
+const BACKUP_FILE: &str = "xavendrix-backup.sqlite";
+const MANIFEST_FILE: &str = "xavendrix-backup.json";
 const LOCAL_STATE_FILE: &str = "profile-sync.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,8 +153,8 @@ impl ProfileSyncStorage {
         let folder = selected_folder(&state)?;
         fs::create_dir_all(&folder)?;
 
-        let snapshot_temp = folder.join(".xareon-backup.sqlite.tmp");
-        let manifest_temp = folder.join(".xareon-backup.json.tmp");
+        let snapshot_temp = folder.join(".xavendrix-backup.sqlite.tmp");
+        let manifest_temp = folder.join(".xavendrix-backup.json.tmp");
         remove_if_exists(&snapshot_temp)?;
         remove_if_exists(&manifest_temp)?;
         snapshot(connection, &snapshot_temp)?;
@@ -206,7 +206,7 @@ impl ProfileSyncStorage {
     }
 
     pub fn database_path(&self) -> PathBuf {
-        self.data_dir.join("xareon.db")
+        self.data_dir.join("xavendrix.db")
     }
 
     fn read_and_validate_backup(&self, folder: &Path) -> AppResult<BackupManifest> {
