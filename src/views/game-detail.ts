@@ -282,7 +282,7 @@ function playSessionHistory(days: DailyPlayTime[]): HTMLElement {
       el("div", { class: "session-history-list" }, days.map((day) => el("div", { class: "session-history-row" }, [
         el("span", {}, [formatDate(day.playDate)]),
         el("strong", {}, [formatTrackedDuration(day.durationSeconds)]),
-        el("span", { class: "badge" }, [`${day.sessionsCount} ${day.sessionsCount === 1 ? "period" : "periods"}`]),
+        // el("span", { class: "badge" }, [`${day.sessionsCount} ${day.sessionsCount === 1 ? "period" : "periods"}`]),
       ]))),
     ]),
   ]);
