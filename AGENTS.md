@@ -90,7 +90,7 @@ xareon/
 │   │   ├── game.ts             # Game/GameInput/GameStatus + GameQuery/sort types
 │   │   ├── genre.ts            # Genre
 │   │   ├── journal.ts          # JournalEntry + inputs
-│   │   ├── play-session.ts     # PlaySession + PlayTimeTotals
+│   │   ├── play-session.ts     # active PlaySession + DailyPlayTime/PlayTimeTotals
 │   │   ├── statistics.ts       # Statistics aggregate + StatBar/StatsSummary/granularity
 │   │   └── settings.ts         # Settings + ProfileSyncInfo/status
 │   ├── ui/
@@ -120,7 +120,7 @@ xareon/
         │   ├── game.rs         # Game, GameInput, GameStatus, GameQuery + sort/filter enums
         │   ├── genre.rs        # Genre + normalize()
         │   ├── journal.rs      # JournalEntry, NewJournalEntry, JournalEntryUpdate
-        │   ├── play_session.rs # timestamped manual play session
+        │   ├── play_session.rs # active tracking state + daily play-time aggregate
         │   ├── statistics.rs   # Statistics aggregate + StatBar/StatsSummary/StatsGranularity
         │   └── settings.rs     # Settings (typed aggregate of app settings)
         ├── repositories/
@@ -129,7 +129,7 @@ xareon/
         │   ├── game_repository.rs     # games table + browser query + genre hydration
         │   ├── genre_repository.rs    # genres + game_genres writes (get_or_create, links)
         │   ├── journal_repository.rs  # journal_entries
-        │   ├── play_session_repository.rs # sessions + cached game totals + today/week aggregates
+        │   ├── play_session_repository.rs # active tracking + daily aggregates + cached totals
         │   ├── statistics_repository.rs # read-only GROUP BY aggregates for the dashboard
         │   └── settings_repository.rs # settings key-value store (get_all/set)
         ├── services/
@@ -173,7 +173,8 @@ xareon/
             ├── 0004_achievements.sql    # user-defined personal achievements
             ├── 0005_play_sessions.sql   # play history + cached totals
             ├── 0006_endless_status.sql  # rebuild games table to add the 'endless' status
-            └── 0007_automatic_tracking.sql # bindings + session source/reason
+            ├── 0007_automatic_tracking.sql # bindings + legacy session source/reason
+            └── 0008_daily_play_time.sql # active state + migrated daily aggregates
 ```
 
 ## 4. Technology stack
@@ -303,19 +304,19 @@ status — so `endless` needs no active/paused variants. Adding a status require
 rebuild migration (SQLite cannot ALTER a CHECK); see `0006_endless_status.sql`.
 **Achievement statuses:** `planned`, `in_progress`, `completed`.
 
-`play_sessions` — immutable manual real-play history. A partial unique index over a
-constant guarantees at most one unfinished session in the entire database.
-| column           | type    | notes                                                   |
-|------------------|---------|---------------------------------------------------------|
-| id               | INTEGER | PK, autoincrement                                       |
-| game_id          | INTEGER | FK → games(id) ON DELETE CASCADE                        |
-| started_at       | TEXT    | NOT NULL, UTC start                                     |
-| ended_at         | TEXT    | nullable only while globally active                    |
-| last_activity_at | TEXT    | NOT NULL; heartbeat updates once per minute             |
-| duration_seconds | INTEGER | nullable while active; non-negative and fixed on Stop  |
-| created_at       | TEXT    | NOT NULL, default `datetime('now')                     |
-| tracking_source  | TEXT    | NOT NULL; `manual` or `automatic`                     |
-| ended_reason     | TEXT    | nullable; manual/process exit/AFK/shutdown/recovery   |
+`active_play_session` — singleton runtime tracking state. Its `singleton_id` is always
+`1`, so at most one game can be tracked globally. Start inserts it, the backend heartbeat
+updates `last_activity_at`, and Stop atomically folds its exact elapsed interval into
+`daily_play_time` before deleting it. Timestamps are UTC; `tracking_source` is `manual`
+or `automatic`.
+
+`daily_play_time` — compact permanent history with one row per game and local calendar
+date (`PRIMARY KEY (game_id, play_date)`). It stores `duration_seconds`, split
+`manual_seconds`/`automatic_seconds`, `sessions_count`, and the day's earliest/latest UTC
+boundaries. Repeated short play periods update the same row. A period crossing local
+midnight is split at every local-day boundary without losing elapsed seconds, including
+across DST. Migration `0008` performs the same split for legacy `play_sessions`, preserves
+an unfinished interval as `active_play_session`, then removes the legacy table.
 
 `game_executable_bindings` — Windows executable paths used by automatic tracking. A game
 can own several bindings; normalized case-insensitive paths are globally unique. These
@@ -336,10 +337,10 @@ profile rows are harmless on macOS, where the monitor and its UI are absent.
   - The browser and game overview keep calendar **Play period** separate from tracked
     **Play time**. Play period is a human calendar duration from `startedAt` to
     `finishedAt` (`1 month, 4 days`), or to today with `so far` while unfinished.
-    `Game.completedSessionsCount` comes from a lightweight correlated count and lets the
-    UI distinguish missing historical tracking data from a real short session. Any game
-    with no completed sessions displays `—` regardless of status (including planned,
-    paused and dropped legacy rows). A real completed session under one minute displays
+    `Game.playPeriodsCount` is the sum of daily `sessions_count` values and lets the
+    UI distinguish missing historical tracking data from a real short period. Any game
+    with no completed periods displays `—` regardless of status (including planned,
+    paused and dropped legacy rows). A real completed period under one minute displays
     `<1m`; an active session remains visible through its separate live timer.
   - `completed_100` remains a valid backend/database status for compatibility but is
     intentionally absent from filters and game forms. Existing rows with that status are
@@ -405,26 +406,27 @@ disabled placeholder for a future cross-game dashboard.
   Settings reports up-to-date/local-newer/backup-newer/conflict/unavailable/invalid states;
   conflict detection compares content hashes against that baseline, never file mtimes.
 
-- **Play tracking** — manual and Windows-only automatic real-play sessions. Commands:
-  `get_active_play_session`, `list_game_play_sessions`, `get_play_time_totals`,
+- **Play tracking** — manual and Windows-only automatic real-play periods. Commands:
+  `get_active_play_session`, `list_game_daily_play_time`, `get_play_time_totals`,
   `get_game_play_time_today`, `start_play_session`,
-  `heartbeat_play_session`, `stop_play_session`. Only one session
-  can be active globally. Play/Stop atomically update the session and cached game fields,
-  so reads never sum all history. Startup closes an interrupted session at its last
+  `heartbeat_play_session`, `stop_play_session`. Only one period
+  can be active globally. Play/Stop atomically update the singleton active state, the
+  relevant daily aggregates, and cached game fields. Startup closes an interrupted period at its last
   minute heartbeat; normal window close stops it at the current time. The browser and
   game detail show total time, Steam-like relative last-played time for games with status `playing`, a live
   `HH:MM:SS` timer and a subtle green indicator. Game detail has one Play/Stop control
-  and hides Play while another game is active.
+  and hides Play while another game is active. Completed periods are retained as compact
+  daily activity (`duration + period count`), not individual Start/Stop rows; game Overview
+  lists recent days.
   - **Today / this-week play-time** is split between backend and frontend so reads stay
     cheap and the display stays live. `get_play_time_totals` returns a `PlayTimeTotals`
-    (`todaySeconds`, `weekSeconds`) summed from **completed** sessions, attributed to the
-    **local** day/week they ended on (SQLite `date(..., 'localtime')`; week starts Monday
-    via `weekday 0, -6 days`). `get_game_play_time_today` is the same for one game, today.
+    (`todaySeconds`, `weekSeconds`) summed from `daily_play_time`; week starts Monday.
+    `get_game_play_time_today` is the same for one game, today.
     These are simple indexed `SUM`s over a slowly-growing table — cheap, computed
     on-demand at view load, never on a timer. The frontend adds the **live** contribution
     of any active session (elapsed clamped to the local day/week start) on top of the
     backend snapshot and ticks it every second; on Stop a reload folds the finished
-    session into the completed total, so there is no double counting. Helpers live in
+    period into the daily total, so there is no double counting. Helpers live in
     `ui/format.ts` (`activeSecondsToday`, `activeSecondsThisWeek`, `startOfLocalWeek`,
     `formatPlayTotal`). The Games header renders the global today/week pill; the game
     detail Overview grid shows a "Played today" card for that game. The Dock icon switches to a green
@@ -446,19 +448,19 @@ disabled placeholder for a future cross-game dashboard.
     capability. A backend worker observes processes, visible top-level windows,
     foreground/minimized state and `GetLastInputInfo`. It starts after foreground plus new
     input, stops on process exit, and ends after a 10-minute unfocused/idle grace period
-    included in play time; returning from AFK creates a new session. Manual sessions have
+    included in play time; returning from AFK creates a new period. Manual periods have
     priority, and manually stopping an automatic session suppresses restart until all
     bound processes exit. Automatic start/stop/AFK transitions emit
     `play-tracking-changed`; an open game detail reloads itself in place (preserving its
     selected tab), so the Play/Stop control, live timer, green indicator, automatic status
-    and history change without a manual refresh. Recent per-game history labels Manual and
-    Automatic sources.
+    and history change without a manual refresh. Recent per-game history shows one row per
+    local day with total duration and play-period count.
 
 - **Statistics** — an all-time dashboard over the tracked history. Command:
   `get_statistics(granularity)` → a single `Statistics` aggregate. Read-only; a handful of
   `GROUP BY … SUM/COUNT` queries run in one connection at view load (and on granularity
-  change), never on a timer. Every play-time figure comes from **completed** sessions,
-  attributed to the local day they ended on — the same convention as the today/week totals.
+  change), never on a timer. Every play-time figure comes from `daily_play_time`; periods
+  crossing midnight contribute to each correct local date.
   - Contents: KPI tiles (total play time, this year, completed, playing now, backlog,
     average rating); a GitHub-style daily **activity heatmap**; **play time over time**
     bucketed by `week`/`month`/`year` via the header granularity toggle (the only control —

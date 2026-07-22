@@ -33,6 +33,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "0007_automatic_tracking",
         sql: include_str!("../migrations/0007_automatic_tracking.sql"),
     },
+    Migration {
+        name: "0008_daily_play_time",
+        sql: include_str!("../migrations/0008_daily_play_time.sql"),
+    },
 ];
 
 struct Migration {
@@ -60,4 +64,43 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_sessions_migrate_to_daily_rows_and_active_singleton() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        for migration in &MIGRATIONS[..7] {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute("INSERT INTO games (id, title) VALUES (1, 'Legacy')", []).unwrap();
+        conn.execute_batch(
+            "INSERT INTO play_sessions (game_id, started_at, ended_at, last_activity_at, duration_seconds, tracking_source, ended_reason) \
+             VALUES (1, datetime('2026-01-15 23:50:00', 'utc'), datetime('2026-01-16 00:20:00', 'utc'), \
+                     datetime('2026-01-16 00:20:00', 'utc'), 1800, 'manual', 'manual'); \
+             INSERT INTO play_sessions (game_id, started_at, last_activity_at, tracking_source) \
+             VALUES (1, datetime('2026-01-16 10:00:00', 'utc'), datetime('2026-01-16 10:05:00', 'utc'), 'automatic');",
+        ).unwrap();
+
+        conn.execute_batch(MIGRATIONS[7].sql).unwrap();
+
+        let (rows, seconds, periods): (i64, i64, i64) = conn.query_row(
+            "SELECT COUNT(*), SUM(duration_seconds), SUM(sessions_count) FROM daily_play_time",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(rows, 2);
+        assert_eq!(seconds, 1_800);
+        assert_eq!(periods, 2);
+        let active: (i64, String) = conn.query_row(
+            "SELECT game_id, tracking_source FROM active_play_session WHERE singleton_id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(active, (1, "automatic".into()));
+    }
 }

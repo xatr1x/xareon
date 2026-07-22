@@ -24,7 +24,7 @@ import {
 } from "../types/achievement";
 import { STATUS_LABELS, type Game } from "../types/game";
 import type { JournalEntry } from "../types/journal";
-import type { PlaySession } from "../types/play-session";
+import type { DailyPlayTime } from "../types/play-session";
 import type { AutomaticTrackingStatus, ExecutableBinding, RunningProcess } from "../types/automatic-tracking";
 import { openGameForm } from "./game-form";
 
@@ -212,7 +212,7 @@ function activeTabContent(
   achievements: Achievement[],
   entries: JournalEntry[],
   todaySeconds: number,
-  sessionHistory: PlaySession[],
+  sessionHistory: DailyPlayTime[],
   automatic: [AutomaticTrackingStatus, ExecutableBinding[]] | null,
   reload: () => Promise<void>,
 ): HTMLElement {
@@ -233,7 +233,7 @@ function overviewSection(
   achievements: Achievement[],
   entries: JournalEntry[],
   todaySeconds: number,
-  sessionHistory: PlaySession[],
+  sessionHistory: DailyPlayTime[],
 ): HTMLElement {
   const completed = achievements.filter((achievement) => achievement.status === "completed").length;
   const achievementSummary =
@@ -275,21 +275,21 @@ function overviewSection(
   ]);
 }
 
-function playSessionHistory(sessions: PlaySession[]): HTMLElement {
+function playSessionHistory(days: DailyPlayTime[]): HTMLElement {
   return el("section", { class: "session-history overview-block" }, [
-    el("h2", {}, ["Recent sessions"]),
-    ...(sessions.length === 0 ? [el("p", { class: "muted" }, ["No completed sessions yet."])] : [
-      el("div", { class: "session-history-list" }, sessions.map((session) => el("div", { class: "session-history-row" }, [
-        el("span", {}, [formatDateTime(session.endedAt ?? session.lastActivityAt)]),
-        el("strong", {}, [formatTrackedDuration(session.durationSeconds ?? 0)]),
-        el("span", { class: `badge session-source-${session.trackingSource}` }, [session.trackingSource === "automatic" ? "Automatic" : "Manual"]),
+    el("h2", {}, ["Recent play activity"]),
+    ...(days.length === 0 ? [el("p", { class: "muted" }, ["No completed play activity yet."])] : [
+      el("div", { class: "session-history-list" }, days.map((day) => el("div", { class: "session-history-row" }, [
+        el("span", {}, [formatDate(day.playDate)]),
+        el("strong", {}, [formatTrackedDuration(day.durationSeconds)]),
+        el("span", { class: "badge" }, [`${day.sessionsCount} ${day.sessionsCount === 1 ? "period" : "periods"}`]),
       ]))),
     ]),
   ]);
 }
 
 function trackedPlayTime(game: Game): string {
-  return game.completedSessionsCount > 0
+  return game.playPeriodsCount > 0
     ? formatTrackedDuration(game.totalPlayTimeSeconds)
     : "—";
 }

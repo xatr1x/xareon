@@ -9,19 +9,26 @@ impl TrackingSource { pub fn as_str(self) -> &'static str { match self { Self::M
 #[derive(Debug, Clone, Copy)]
 pub enum SessionEndReason { Manual, ProcessExit, Afk, Shutdown, Recovery }
 
-impl SessionEndReason { pub fn as_str(self) -> &'static str { match self { Self::Manual => "manual", Self::ProcessExit => "process_exit", Self::Afk => "afk", Self::Shutdown => "shutdown", Self::Recovery => "recovery" } } }
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaySession {
-    pub id: i64,
     pub game_id: i64,
     pub started_at: String,
-    pub ended_at: Option<String>,
     pub last_activity_at: String,
-    pub duration_seconds: Option<i64>,
     pub tracking_source: TrackingSource,
-    pub ended_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyPlayTime {
+    pub game_id: i64,
+    pub play_date: String,
+    pub duration_seconds: i64,
+    pub manual_seconds: i64,
+    pub automatic_seconds: i64,
+    pub sessions_count: i64,
+    pub first_started_at: String,
+    pub last_ended_at: String,
 }
 
 pub struct ActivePlaySummary {
@@ -29,9 +36,8 @@ pub struct ActivePlaySummary {
     pub elapsed_seconds: i64,
 }
 
-/// Aggregated play time over recent calendar windows, derived from completed
-/// sessions attributed to the local day they ended on. The live contribution of
-/// an in-progress session is added by the frontend, which owns the ticking clock.
+/// Aggregated play time over recent local-calendar windows. Completed periods
+/// come from daily aggregates; the frontend adds the ticking active contribution.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayTimeTotals {

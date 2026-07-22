@@ -44,7 +44,7 @@ export interface Game {
   rating: number | null;
   coverPath: string | null;
   totalPlayTimeSeconds: number;
-  completedSessionsCount: number;
+  playPeriodsCount: number;
   isPlayingNow: boolean;
   lastPlayedAt: string | null;
   activeSessionStartedAt: string | null;

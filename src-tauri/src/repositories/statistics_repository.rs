@@ -6,9 +6,8 @@ use crate::error::AppResult;
 /// How many games to include in the "top games by play time" list.
 const TOP_GAMES_LIMIT: i64 = 8;
 
-/// Read-only aggregate queries for the Statistics page. Every figure is derived
-/// from **completed** sessions, attributed to the local day they ended on — the
-/// same convention as the today/week play-time totals.
+/// Read-only aggregate queries for the Statistics page. Every play-time figure
+/// is derived from local-calendar daily aggregates.
 pub trait StatisticsRepository {
     fn statistics(&self, granularity: StatsGranularity) -> AppResult<Statistics>;
 }
@@ -39,9 +38,9 @@ impl<'a> SqliteStatisticsRepository<'a> {
         let (total_play_seconds, year_play_seconds) = self.conn.query_row(
             "SELECT \
                COALESCE(SUM(duration_seconds), 0), \
-               COALESCE(SUM(CASE WHEN strftime('%Y', ended_at, 'localtime') \
+               COALESCE(SUM(CASE WHEN strftime('%Y', play_date) \
                  = strftime('%Y', 'now', 'localtime') THEN duration_seconds ELSE 0 END), 0) \
-             FROM play_sessions WHERE ended_at IS NOT NULL",
+             FROM daily_play_time",
             [],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )?;
@@ -77,10 +76,9 @@ impl<'a> SqliteStatisticsRepository<'a> {
     /// The SQL expression that produces the time-bucket key for `over_time`.
     fn over_time_bucket(granularity: StatsGranularity) -> &'static str {
         match granularity {
-            // The Monday that starts the session's local week.
-            StatsGranularity::Week => "date(ended_at, 'localtime', 'weekday 0', '-6 days')",
-            StatsGranularity::Month => "strftime('%Y-%m', ended_at, 'localtime')",
-            StatsGranularity::Year => "strftime('%Y', ended_at, 'localtime')",
+            StatsGranularity::Week => "date(play_date, 'weekday 0', '-6 days')",
+            StatsGranularity::Month => "strftime('%Y-%m', play_date)",
+            StatsGranularity::Year => "strftime('%Y', play_date)",
         }
     }
 }
@@ -90,38 +88,35 @@ impl StatisticsRepository for SqliteStatisticsRepository<'_> {
         let summary = self.summary()?;
 
         let daily = self.grouped(
-            "SELECT date(ended_at, 'localtime'), SUM(duration_seconds) \
-             FROM play_sessions WHERE ended_at IS NOT NULL \
-             GROUP BY 1 ORDER BY 1",
+            "SELECT play_date, SUM(duration_seconds) FROM daily_play_time \
+             GROUP BY play_date ORDER BY play_date",
         )?;
 
         let bucket = Self::over_time_bucket(granularity);
         let over_time = self.grouped(&format!(
             "SELECT {bucket}, SUM(duration_seconds) \
-             FROM play_sessions WHERE ended_at IS NOT NULL \
+             FROM daily_play_time \
              GROUP BY 1 ORDER BY 1"
         ))?;
 
         let weekday = self.grouped(
-            "SELECT strftime('%w', ended_at, 'localtime'), SUM(duration_seconds) \
-             FROM play_sessions WHERE ended_at IS NOT NULL \
+            "SELECT strftime('%w', play_date), SUM(duration_seconds) \
+             FROM daily_play_time \
              GROUP BY 1",
         )?;
 
         let top_games = self.grouped(&format!(
-            "SELECT g.title, SUM(ps.duration_seconds) AS s \
-             FROM play_sessions ps JOIN games g ON g.id = ps.game_id \
-             WHERE ps.ended_at IS NOT NULL \
-             GROUP BY ps.game_id ORDER BY s DESC LIMIT {TOP_GAMES_LIMIT}"
+            "SELECT g.title, SUM(dpt.duration_seconds) AS s \
+             FROM daily_play_time dpt JOIN games g ON g.id = dpt.game_id \
+             GROUP BY dpt.game_id ORDER BY s DESC LIMIT {TOP_GAMES_LIMIT}"
         ))?;
 
         // A multi-genre game contributes its play time to each of its genres.
         let genres = self.grouped(
-            "SELECT ge.name, SUM(ps.duration_seconds) AS s \
-             FROM play_sessions ps \
-             JOIN game_genres gg ON gg.game_id = ps.game_id \
+            "SELECT ge.name, SUM(dpt.duration_seconds) AS s \
+             FROM daily_play_time dpt \
+             JOIN game_genres gg ON gg.game_id = dpt.game_id \
              JOIN genres ge ON ge.id = gg.genre_id \
-             WHERE ps.ended_at IS NOT NULL \
              GROUP BY ge.id ORDER BY s DESC",
         )?;
 

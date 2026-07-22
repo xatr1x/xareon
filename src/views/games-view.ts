@@ -405,7 +405,7 @@ function lastPlayedLabel(value: string, prefix = "Last played "): HTMLElement {
 
 function trackingCell(game: Game): HTMLElement {
   const content: Node[] = [];
-  if (game.completedSessionsCount > 0) {
+  if (game.playPeriodsCount > 0) {
     content.push(el("strong", {}, [formatTrackedDuration(game.totalPlayTimeSeconds)]));
   } else if (!game.isPlayingNow) {
     content.push(el("strong", {}, ["—"]));

@@ -135,7 +135,7 @@ pub fn run() {
             commands::play_session_commands::get_active_play_session,
             commands::play_session_commands::get_play_time_totals,
             commands::play_session_commands::get_game_play_time_today,
-            commands::play_session_commands::list_game_play_sessions,
+            commands::play_session_commands::list_game_daily_play_time,
             commands::play_session_commands::start_play_session,
             commands::play_session_commands::heartbeat_play_session,
             commands::play_session_commands::stop_play_session,
